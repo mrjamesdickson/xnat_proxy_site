@@ -23,6 +23,9 @@ export function Scans() {
     experiment: string;
   }>();
   
+  console.log('🔍 Scans URL params:', { project, subject, experiment });
+  console.log('🔍 Current URL:', window.location.pathname);
+  
   const { client } = useXnat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
@@ -37,15 +40,10 @@ export function Scans() {
     queryKey: ['scans', project, subject, experiment],
     queryFn: async () => {
       try {
-        console.log('🔍 Fetching scans for:', { project, subject, experiment });
         const result = await client?.getScans(project!, subject!, experiment!);
-        console.log('📊 Raw scans API response:', result);
-        console.log('📊 Type of result:', typeof result);
-        console.log('📊 Is array:', Array.isArray(result));
-        console.log('📊 Length:', result?.length);
         return result || [];
       } catch (error) {
-        console.error('❌ Error fetching scans:', error);
+        console.error('Error fetching scans:', error);
         return []; // Return empty array instead of throwing
       }
     },

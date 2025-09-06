@@ -131,6 +131,105 @@ export interface XnatUser {
   };
 }
 
+export interface XnatContainer {
+  id: string;
+  status: string;
+  'status-time': string;
+  'container-id': string;
+  'docker-image': string;
+  'command-id': string;
+  'wrapper-id': string;
+  'project-id'?: string;
+  'user-id': string;
+  'workflow-id'?: string;
+  created: string;
+  history: XnatContainerHistory[];
+  mounts: XnatMount[];
+  'environment-variables': Record<string, string>;
+  'command-line': string;
+  'working-directory': string;
+  subtype?: string;
+  'parent-source-object-name'?: string;
+  'derived-data-id'?: string;
+  'input-mount-xnat-host-path'?: string;
+  'output-mount-xnat-host-path'?: string;
+  'log-paths': {
+    stdout: string;
+    stderr: string;
+  };
+}
+
+export interface XnatContainerHistory {
+  status: string;
+  'time-recorded': string;
+  'external-timestamp'?: string;
+  'exit-code'?: number;
+  'entity-type': 'system' | 'event' | 'user';
+  'entity-id'?: string;
+}
+
+export interface XnatMount {
+  name: string;
+  'xnat-host-path': string;
+  'container-path': string;
+  'input-files'?: XnatMountFile[];
+  'output-files'?: XnatMountFile[];
+}
+
+export interface XnatMountFile {
+  name: string;
+  path: string;
+  'file-input'?: boolean;
+  'directory-input'?: boolean;
+}
+
+export interface XnatWorkflow {
+  id: string;
+  status: 'In Progress' | 'Complete' | 'Failed' | 'Queued';
+  'pipeline-name': string;
+  'data-type': string;
+  'step-id': string;
+  'step-description': string;
+  launch_time: string;
+  current_step_launch_time?: string;
+  percent_complete?: number;
+  category?: string;
+  'external-id'?: string;
+  details?: Record<string, any>;
+}
+
+export interface XnatProcess {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'IDLE' | 'ERROR' | 'STOPPED';
+  type: 'UPLOAD' | 'PROCESSING' | 'VALIDATION' | 'ANALYSIS' | 'EXPORT';
+  user: string;
+  project?: string;
+  description?: string;
+  started: string;
+  last_activity?: string;
+  cpu_usage?: number;
+  memory_usage?: number;
+  disk_usage?: number;
+  files_processed?: number;
+  files_total?: number;
+  bytes_processed?: number;
+  bytes_total?: number;
+}
+
+export interface XnatSystemStats {
+  cpu_usage: number;
+  memory_usage: number;
+  memory_total: number;
+  disk_usage: number;
+  disk_total: number;
+  active_jobs: number;
+  queued_jobs: number;
+  active_processes: number;
+  uptime: number;
+  version: string;
+}
+
 export class XnatApiClient {
   private client: AxiosInstance;
   private config: XnatConfig;
@@ -211,13 +310,13 @@ export class XnatApiClient {
     });
     
     const jsessionid = response.data;
-    this.client.defaults.headers.common['Cookie'] = `JSESSIONID=${jsessionid}`;
+    // Don't set Cookie header manually - browser handles this with withCredentials
     return jsessionid;
   }
 
   async logout(): Promise<void> {
     await this.client.delete('/data/JSESSION');
-    delete this.client.defaults.headers.common['Cookie'];
+    // Don't manipulate Cookie header manually
     delete this.client.defaults.auth;
   }
 
@@ -324,17 +423,10 @@ export class XnatApiClient {
 
   // Scan methods
   async getScans(projectId: string, subjectId: string, experimentId: string): Promise<XnatScan[]> {
-    console.log('🌐 Making scans API call to:', `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans`);
     const response = await this.client.get(`/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans`, {
       params: { format: 'json' }
     });
-    console.log('🌐 Full HTTP response:', response);
-    console.log('🌐 Response data:', response.data);
-    console.log('🌐 Response data ResultSet:', response.data.ResultSet);
-    console.log('🌐 Response data ResultSet Result:', response.data.ResultSet?.Result);
-    const result = response.data.ResultSet?.Result || [];
-    console.log('🌐 Final scans result:', result);
-    return result;
+    return response.data.ResultSet?.Result || [];
   }
 
   async getScan(projectId: string, subjectId: string, experimentId: string, scanId: string): Promise<XnatScan> {
@@ -509,6 +601,181 @@ export class XnatApiClient {
     }
   }
 
+  // Container Service methods
+  async getContainers(): Promise<XnatContainer[]> {
+    try {
+      const response = await this.client.get('/xapi/containers', {
+        params: { format: 'json' }
+      });
+      return response.data || [];
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.warn('Container service not available on this XNAT server');
+        return [];
+      }
+      console.error('Error fetching containers:', error);
+      return [];
+    }
+  }
+
+  async getContainer(containerId: string): Promise<XnatContainer | null> {
+    try {
+      const response = await this.client.get(`/xapi/containers/${containerId}`, {
+        params: { format: 'json' }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching container:', error);
+      return null;
+    }
+  }
+
+  async killContainer(containerId: string): Promise<boolean> {
+    try {
+      await this.client.delete(`/xapi/containers/${containerId}/kill`);
+      return true;
+    } catch (error) {
+      console.error('Error killing container:', error);
+      return false;
+    }
+  }
+
+  async getWorkflows(options?: {
+    page?: number;
+    id?: string;
+    data_type?: string;
+    sortable?: boolean;
+    days?: number;
+  }): Promise<XnatWorkflow[]> {
+    try {
+      // Use GET request with query parameters since POST is not supported
+      const params: any = { format: 'json' };
+      
+      // Add optional filtering parameters if provided
+      if (options?.id) params.id = options.id;
+      if (options?.data_type) params.data_type = options.data_type;
+      if (options?.days) params.days = options.days;
+      if (options?.page) params.page = options.page;
+      
+      const response = await this.client.get('/data/workflows', { params });
+      
+      // Handle different possible response formats
+      return response.data?.ResultSet?.Result || response.data?.results || response.data || [];
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.warn('Workflows endpoint not available on this XNAT server');
+        return [];
+      }
+      if (error.response?.status === 405) {
+        console.warn('Workflows endpoint does not support the requested method');
+        return [];
+      }
+      console.error('Error fetching workflows:', error);
+      return [];
+    }
+  }
+
+  async getWorkflow(workflowId: string): Promise<XnatWorkflow | null> {
+    try {
+      const response = await this.client.get(`/data/workflows/${workflowId}`, {
+        params: { format: 'json' }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching workflow:', error);
+      return null;
+    }
+  }
+
+  async getContainerLogs(containerId: string, logType: 'stdout' | 'stderr' = 'stdout'): Promise<string> {
+    try {
+      const response = await this.client.get(`/xapi/containers/${containerId}/logs/${logType}`, {
+        responseType: 'text'
+      });
+      return response.data || '';
+    } catch (error) {
+      console.error('Error fetching container logs:', error);
+      return '';
+    }
+  }
+
+  async getProcesses(): Promise<XnatProcess[]> {
+    try {
+      // Mock process data - in real implementation would query system processes
+      const mockProcesses: XnatProcess[] = [
+        {
+          id: 'proc-001',
+          name: 'DICOM Receiver',
+          status: 'ACTIVE',
+          type: 'UPLOAD',
+          user: 'system',
+          description: 'Receiving incoming DICOM files from scanner',
+          started: new Date(Date.now() - 1800000).toISOString(),
+          last_activity: new Date(Date.now() - 30000).toISOString(),
+          cpu_usage: 15.5,
+          memory_usage: 512,
+          files_processed: 1250,
+          bytes_processed: 2.1 * 1024 * 1024 * 1024
+        },
+        {
+          id: 'proc-002',
+          name: 'Image Processing Pipeline',
+          status: 'ACTIVE',
+          type: 'PROCESSING',
+          user: 'pipeline',
+          project: 'CMB-MML',
+          description: 'Running automated image processing workflows',
+          started: new Date(Date.now() - 3600000).toISOString(),
+          last_activity: new Date(Date.now() - 120000).toISOString(),
+          cpu_usage: 85.2,
+          memory_usage: 2048,
+          files_processed: 45,
+          files_total: 78,
+          bytes_processed: 5.7 * 1024 * 1024 * 1024,
+          bytes_total: 10.2 * 1024 * 1024 * 1024
+        },
+        {
+          id: 'proc-003',
+          name: 'Database Maintenance',
+          status: 'IDLE',
+          type: 'VALIDATION',
+          user: 'system',
+          description: 'Periodic database cleanup and optimization',
+          started: new Date(Date.now() - 7200000).toISOString(),
+          last_activity: new Date(Date.now() - 1800000).toISOString(),
+          cpu_usage: 2.1,
+          memory_usage: 128
+        }
+      ];
+      return mockProcesses;
+    } catch (error) {
+      console.error('Error fetching processes:', error);
+      return [];
+    }
+  }
+
+  async getSystemStats(): Promise<XnatSystemStats> {
+    try {
+      // Mock system stats - in real implementation would query system metrics
+      const mockStats: XnatSystemStats = {
+        cpu_usage: 45.2,
+        memory_usage: 6.8,
+        memory_total: 16.0,
+        disk_usage: 2.4,
+        disk_total: 10.0,
+        active_jobs: 2,
+        queued_jobs: 3,
+        active_processes: 5,
+        uptime: 2592000, // 30 days in seconds
+        version: '1.8.7'
+      };
+      return mockStats;
+    } catch (error) {
+      console.error('Error fetching system stats:', error);
+      throw error;
+    }
+  }
+
   // Utility methods
   getConfig(): XnatConfig {
     return { ...this.config };
@@ -521,9 +788,10 @@ export class XnatApiClient {
       this.client.defaults.baseURL = newConfig.baseURL;
     }
     
-    if (newConfig.jsessionid) {
-      this.client.defaults.headers.common['Cookie'] = `JSESSIONID=${newConfig.jsessionid}`;
-    }
+    // Don't set Cookie header manually - browser handles this automatically
+    // if (newConfig.jsessionid) {
+    //   this.client.defaults.headers.common['Cookie'] = `JSESSIONID=${newConfig.jsessionid}`;
+    // }
     
     if (newConfig.username && newConfig.password) {
       this.client.defaults.auth = {

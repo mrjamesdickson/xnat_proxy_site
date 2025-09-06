@@ -50,7 +50,16 @@ export function XnatProvider({ children }: XnatProviderProps) {
           const apiClient = new XnatApiClient(configWithSession);
           
           try {
-            const isOnline = await apiClient.ping();
+            // Add timeout to ping request to prevent hanging
+            const timeoutPromise = new Promise<boolean>((_, reject) => {
+              setTimeout(() => reject(new Error('Ping timeout')), 5000);
+            });
+            
+            const isOnline = await Promise.race([
+              apiClient.ping(),
+              timeoutPromise
+            ]);
+            
             if (isOnline) {
               setClient(apiClient);
               setConfig(configWithSession);
@@ -59,14 +68,21 @@ export function XnatProvider({ children }: XnatProviderProps) {
               if (storedUser) {
                 setCurrentUser(JSON.parse(storedUser));
               } else {
-                const user = await apiClient.getCurrentUser();
-                setCurrentUser(user);
-                localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+                try {
+                  const user = await apiClient.getCurrentUser();
+                  setCurrentUser(user);
+                  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+                } catch (userError) {
+                  console.warn('Failed to fetch current user, clearing auth:', userError);
+                  clearStoredAuth();
+                }
               }
             } else {
+              console.log('Server ping failed, clearing stored auth');
               clearStoredAuth();
             }
           } catch (error) {
+            console.log('Failed to validate stored session, clearing auth:', error);
             clearStoredAuth();
           }
         }
@@ -78,7 +94,15 @@ export function XnatProvider({ children }: XnatProviderProps) {
       }
     };
 
-    initializeFromStorage();
+    // Add timeout at the top level to ensure loading state is cleared
+    const initTimeout = setTimeout(() => {
+      console.warn('Initialization taking too long, clearing loading state');
+      setIsLoading(false);
+    }, 10000);
+
+    initializeFromStorage().finally(() => {
+      clearTimeout(initTimeout);
+    });
   }, []);
 
   const clearStoredAuth = () => {

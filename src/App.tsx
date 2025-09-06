@@ -5,10 +5,14 @@ import { Login } from './components/Login';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { Projects } from './components/Projects';
+import { ProjectDetail } from './components/ProjectDetail';
 import { Subjects } from './components/Subjects';
+import { SubjectDetail } from './components/SubjectDetail';
 import { Experiments } from './components/Experiments';
 import { ExperimentDetail } from './components/ExperimentDetail';
 import { Scans } from './components/Scans';
+import { OhifViewer } from './components/OhifViewer';
+import { Processing } from './components/Processing';
 import { Upload } from './components/Upload';
 import { Search } from './components/Search';
 import { Settings } from './components/Settings';
@@ -36,10 +40,15 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/projects" element={<Projects />} />
+        <Route path="/projects/:project" element={<ProjectDetail />} />
         <Route path="/subjects" element={<Subjects />} />
+        <Route path="/subjects/:project/:subject/experiments" element={<Experiments />} />
+        <Route path="/subjects/:project/:subject" element={<SubjectDetail />} />
         <Route path="/experiments" element={<Experiments />} />
         <Route path="/experiments/:project/:subject/:experiment/scans" element={<Scans />} />
+        <Route path="/experiments/:project/:subject/:experiment/viewer" element={<OhifViewer />} />
         <Route path="/experiments/:project/:subject/:experiment" element={<ExperimentDetail />} />
+        <Route path="/processing" element={<Processing />} />
         <Route path="/upload" element={<Upload />} />
         <Route path="/search" element={<Search />} />
         <Route path="/settings" element={<Settings />} />

@@ -16,13 +16,18 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 
 export function Experiments() {
   const { client } = useXnat();
+  const [searchParams] = useSearchParams();
+  const { project: routeProject, subject: routeSubject } = useParams<{
+    project: string;
+    subject: string;
+  }>();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProject, setSelectedProject] = useState(routeProject || searchParams.get('project') || '');
   const [selectedModality, setSelectedModality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
@@ -33,25 +38,104 @@ export function Experiments() {
     enabled: !!client,
   });
 
-  const getSubjectId = (experiment: any) => {
-    return experiment.subject_id || experiment.subject_ID || experiment.subject || experiment.ID || experiment.id;
-  };
-
-  const getExperimentId = (experiment: any) => {
-    return experiment.id || experiment.ID || experiment.experiment_id || experiment.experiment_ID || experiment.label;
-  };
-
-  const { data: experiments, isLoading, error } = useQuery({
-    queryKey: ['experiments', selectedProject],
+  // Fetch subjects to create a mapping for experiments that don't have subject_id
+  const { data: subjects } = useQuery({
+    queryKey: ['subjects', selectedProject],
     queryFn: () => selectedProject 
-      ? client?.getExperiments(selectedProject) || []
-      : client?.getExperiments() || [],
+      ? client?.getSubjects(selectedProject) || []
+      : client?.getSubjects() || [],
     enabled: !!client,
   });
 
-  console.log('Experiments data:', experiments);
-  console.log('Is loading:', isLoading);
-  console.log('Error:', error);
+  const getSubjectId = (experiment: any) => {
+    // First try the direct field
+    if (experiment.subject_id) {
+      return experiment.subject_id;
+    }
+    
+    // Try to find the subject by matching experiment to subject
+    // This is a common pattern where experiments belong to subjects in the same project
+    if (subjects && subjects.length > 0) {
+      // If there's only one subject in the project, use that
+      if (subjects.length === 1) {
+        return subjects[0].id || subjects[0].label;
+      }
+      
+      // Try to find subject by matching patterns or labels
+      // This might need adjustment based on your XNAT setup
+      const matchingSubject = subjects.find(subject => {
+        // Try various matching strategies
+        return experiment.label?.includes(subject.label) ||
+               experiment.label?.includes(subject.id) ||
+               subject.label?.includes(experiment.label) ||
+               subject.id?.includes(experiment.label);
+      });
+      
+      if (matchingSubject) {
+        return matchingSubject.id || matchingSubject.label;
+      }
+    }
+    
+    // Fallback strategies
+    return experiment.subject_ID || 
+           experiment.subject || 
+           experiment.subject_label ||
+           experiment.subjectId ||
+           // Try extracting from URI if available
+           experiment.URI?.split('/subjects/')[1]?.split('/')[0] ||
+           // Transform experiment ID pattern (if it follows XNAT_E -> XNAT_S)
+           (experiment.id?.startsWith('XNAT_E') ? experiment.id.replace('XNAT_E', 'XNAT_S') : null) ||
+           // Last resort: use a placeholder that indicates the issue
+           'UNKNOWN_SUBJECT';
+  };
+
+  const getExperimentId = (experiment: any) => {
+    return experiment.id || experiment.label;
+  };
+
+  const { data: experiments, isLoading, error } = useQuery({
+    queryKey: ['experiments', selectedProject, routeSubject],
+    queryFn: async () => {
+      try {
+        let result;
+        if (routeProject && routeSubject) {
+          // Fetching experiments for a specific subject
+          result = await client?.getExperiments(routeProject, routeSubject) || [];
+        } else if (selectedProject) {
+          // Fetching experiments for a specific project
+          result = await client?.getExperiments(selectedProject) || [];
+        } else {
+          // Fetching all experiments
+          result = await client?.getExperiments() || [];
+        }
+        console.log('✅ Successfully loaded experiments:', result?.length);
+        return result;
+      } catch (err) {
+        console.error('❌ Error loading experiments:', err);
+        throw err;
+      }
+    },
+    enabled: !!client,
+  });
+
+  if (experiments?.[0]) {
+    const sample = experiments[0];
+    console.log('🔍 Debug experiment data:', {
+      project: sample.project,
+      subject_id: sample.subject_id,
+      id: sample.id,
+      label: sample.label,
+      allKeys: Object.keys(sample)
+    });
+  }
+  
+  if (subjects?.[0]) {
+    console.log('🔍 Debug subjects data:', {
+      count: subjects.length,
+      sample: subjects[0],
+      allSubjects: subjects.map(s => ({ id: s.id, label: s.label }))
+    });
+  }
   
   const filteredExperiments = experiments?.filter(experiment => {
     const subjectId = getSubjectId(experiment);
@@ -256,7 +340,8 @@ export function Experiments() {
           {paginatedExperiments.map((experiment) => {
             const ModalityIcon = getModalityIcon(experiment.modality);
             const modalityColor = getModalityColor(experiment.modality);
-            const subjectId = getSubjectId(experiment);
+            const subjectId = routeSubject || getSubjectId(experiment);
+            const projectId = routeProject || experiment.project;
             const experimentId = getExperimentId(experiment);
             
             return (
@@ -291,7 +376,7 @@ export function Experiments() {
                   <div className="space-y-2 mb-4">
                     <div className="flex items-center text-sm text-gray-600">
                       <Folder className="h-4 w-4 mr-2 text-gray-400" />
-                      <span className="truncate">{experiment.project}</span>
+                      <span className="truncate">{projectId}</span>
                     </div>
                     
                     <div className="flex items-center text-sm text-gray-600">
@@ -341,19 +426,11 @@ export function Experiments() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <Link
-                        to={`/experiments/${experiment.project}/${subjectId}/${experimentId}`}
+                        to={`/experiments/${projectId}/${subjectId}/${experimentId}`}
                         className="inline-flex items-center text-xs font-medium text-blue-600 hover:text-blue-500"
                       >
                         <Eye className="h-3 w-3 mr-1" />
                         View
-                      </Link>
-                      
-                      <Link
-                        to={`/experiments/${experiment.project}/${subjectId}/${experimentId}/scans`}
-                        className="inline-flex items-center text-xs font-medium text-purple-600 hover:text-purple-500"
-                      >
-                        <FileImage className="h-3 w-3 mr-1" />
-                        Scans
                       </Link>
                     </div>
                     

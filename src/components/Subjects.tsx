@@ -8,14 +8,20 @@ import {
   User,
   FileImage,
   Eye,
-  Plus
+  Plus,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import clsx from 'clsx';
 
 export function Subjects() {
   const { client } = useXnat();
+  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || '');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
 
   const getSubjectId = (subject: any) => {
     return subject.id || subject.ID || subject.subject_id || subject.subject_ID || subject.label;
@@ -41,6 +47,36 @@ export function Subjects() {
       subjectId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       subject.group?.toLowerCase().includes(searchTerm.toLowerCase());
   }) || [];
+
+  // Pagination calculations
+  const totalItems = filteredSubjects.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedSubjects = filteredSubjects.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change
+  const handleFilterChange = (filterType: 'search' | 'project', value: string) => {
+    setCurrentPage(1);
+    switch (filterType) {
+      case 'search':
+        setSearchTerm(value);
+        break;
+      case 'project':
+        setSelectedProject(value);
+        break;
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
 
   if (error) {
     return (
@@ -77,6 +113,44 @@ export function Subjects() {
         </div>
       </div>
 
+      {/* Summary Stats */}
+      {filteredSubjects.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm ring-1 ring-gray-900/5">
+          <h3 className="text-base font-semibold leading-6 text-gray-900 mb-4">
+            Subject Summary
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="text-2xl font-semibold text-gray-900">
+                {filteredSubjects.length}
+              </div>
+              <div className="text-sm text-gray-500">Total Subjects</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="text-2xl font-semibold text-gray-900">
+                {new Set(filteredSubjects.map(s => s.project)).size}
+              </div>
+              <div className="text-sm text-gray-500">Projects</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="text-2xl font-semibold text-gray-900">
+                {filteredSubjects.filter(s => s.gender === 'M').length}
+              </div>
+              <div className="text-sm text-gray-500">Male</div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="text-2xl font-semibold text-gray-900">
+                {filteredSubjects.filter(s => s.gender === 'F').length}
+              </div>
+              <div className="text-sm text-gray-500">Female</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search and Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -88,7 +162,7 @@ export function Subjects() {
             className="block w-full rounded-md border-0 py-1.5 pl-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
             placeholder="Search subjects..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleFilterChange('search', e.target.value)}
           />
         </div>
         
@@ -99,7 +173,7 @@ export function Subjects() {
           <select
             className="block w-full rounded-md border-0 py-1.5 pl-10 pr-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
             value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
+            onChange={(e) => handleFilterChange('project', e.target.value)}
           >
             <option value="">All Projects</option>
             {projects?.map((project) => (
@@ -169,7 +243,7 @@ export function Subjects() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSubjects.map((subject) => {
+                {paginatedSubjects.map((subject) => {
                   const subjectId = getSubjectId(subject);
                   return (
                   <tr key={subjectId} className="hover:bg-gray-50">
@@ -251,39 +325,93 @@ export function Subjects() {
         )}
       </div>
 
-      {/* Summary Stats */}
-      {filteredSubjects.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm ring-1 ring-gray-900/5">
-          <h3 className="text-base font-semibold leading-6 text-gray-900 mb-4">
-            Subject Summary
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-2xl font-semibold text-gray-900">
-                {filteredSubjects.length}
-              </div>
-              <div className="text-sm text-gray-500">Total Subjects</div>
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6 rounded-lg shadow-sm">
+          <div className="flex justify-between flex-1 sm:hidden">
+            <button
+              onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="relative inline-flex items-center px-4 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="relative ml-3 inline-flex items-center px-4 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+          <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-700">Show</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-sm text-gray-700">per page</span>
             </div>
-            
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-2xl font-semibold text-gray-900">
-                {new Set(filteredSubjects.map(s => s.project)).size}
-              </div>
-              <div className="text-sm text-gray-500">Projects</div>
+            <div>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
+                <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of{' '}
+                <span className="font-medium">{totalItems}</span> results
+              </p>
             </div>
-            
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-2xl font-semibold text-gray-900">
-                {filteredSubjects.filter(s => s.gender === 'M').length}
-              </div>
-              <div className="text-sm text-gray-500">Male</div>
-            </div>
-            
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-2xl font-semibold text-gray-900">
-                {filteredSubjects.filter(s => s.gender === 'F').length}
-              </div>
-              <div className="text-sm text-gray-500">Female</div>
+            <div>
+              <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                <button
+                  onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                </button>
+                
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={clsx(
+                        'relative inline-flex items-center px-4 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0',
+                        pageNum === currentPage
+                          ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600'
+                          : 'text-gray-900'
+                      )}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                <button
+                  onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </nav>
             </div>
           </div>
         </div>

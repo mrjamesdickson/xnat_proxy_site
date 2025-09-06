@@ -11,7 +11,8 @@ import {
   Camera,
   FileImage,
   Settings,
-  Eye
+  Eye,
+  Monitor
 } from 'lucide-react';
 
 export function ExperimentDetail() {
@@ -23,10 +24,30 @@ export function ExperimentDetail() {
   
   const { client } = useXnat();
 
+  // Get the XNAT base URL for the viewer link
+  const xnatConfig = client?.getConfig();
+  const baseURL = xnatConfig?.baseURL || '';
+  
+  // Construct the OHIF viewer URL using actual XNAT IDs
+  const getViewerUrl = () => {
+    // Use the actual IDs from the fetched data
+    const subjectId = subjectData?.id || subject;
+    const experimentId = experimentData?.id || experiment;
+    const experimentLabel = experimentData?.label || experiment;
+    
+    return `${baseURL}/VIEWER/?subjectId=${subjectId}&projectId=${project}&experimentId=${experimentId}&experimentLabel=${experimentLabel}`;
+  };
+
   const { data: experimentData, isLoading, error } = useQuery({
     queryKey: ['experiment', project, subject, experiment],
     queryFn: () => client?.getExperiment(project!, subject!, experiment!) || null,
     enabled: !!client && !!project && !!subject && !!experiment,
+  });
+
+  const { data: subjectData } = useQuery({
+    queryKey: ['subject', project, subject],
+    queryFn: () => client?.getSubject(project!, subject!) || null,
+    enabled: !!client && !!project && !!subject,
   });
 
   const { data: scans } = useQuery({
@@ -281,6 +302,22 @@ export function ExperimentDetail() {
           <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Actions</h3>
             <div className="space-y-2">
+              <button
+                onClick={() => window.open(getViewerUrl(), '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes')}
+                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
+              >
+                <Monitor className="h-4 w-4 mr-2" />
+                OHIF Viewer (New Window)
+              </button>
+              
+              <button
+                onClick={() => window.open(getViewerUrl(), 'ohif-viewer-tab')}
+                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <Monitor className="h-4 w-4 mr-2" />
+                OHIF Viewer (New Tab)
+              </button>
+              
               <Link
                 to={`/experiments/${project}/${subject}/${experiment}/scans`}
                 className="block w-full text-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"

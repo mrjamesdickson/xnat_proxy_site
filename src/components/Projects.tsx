@@ -16,6 +16,10 @@ import {
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
+function getProjectId(project: any): string {
+  return project.id || project.ID || project.name || project.Name || '';
+}
+
 export function Projects() {
   const { client } = useXnat();
   const queryClient = useQueryClient();
@@ -37,11 +41,12 @@ export function Projects() {
 
   const filteredProjects = projects?.filter(project =>
     project.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getProjectId(project)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     project.description?.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
-  const handleDeleteProject = async (projectId: string) => {
+  const handleDeleteProject = async (project: any) => {
+    const projectId = getProjectId(project);
     if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
       try {
         await deleteProjectMutation.mutateAsync(projectId);
@@ -147,7 +152,7 @@ export function Projects() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filteredProjects.map((project) => (
             <div
-              key={project.id}
+              key={getProjectId(project)}
               className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow"
             >
               <div className="p-6">
@@ -158,9 +163,9 @@ export function Projects() {
                     </div>
                     <div className="ml-3">
                       <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {project.name || project.id}
+                        {project.name || getProjectId(project)}
                       </h3>
-                      <p className="text-xs text-gray-500">{project.id}</p>
+                      <p className="text-xs text-gray-500">{getProjectId(project)}</p>
                     </div>
                   </div>
                   
@@ -170,28 +175,28 @@ export function Projects() {
                     </button>
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 ring-1 ring-black ring-opacity-5 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all duration-200 z-10">
                       <Link
-                        to={`/projects/${project.id}`}
+                        to={`/projects/${getProjectId(project)}`}
                         className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       >
                         <Eye className="w-4 h-4 mr-3" />
                         View Details
                       </Link>
                       <Link
-                        to={`/projects/${project.id}/subjects`}
+                        to={`/subjects?project=${getProjectId(project)}`}
                         className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       >
                         <Users className="w-4 h-4 mr-3" />
                         View Subjects
                       </Link>
                       <Link
-                        to={`/projects/${project.id}/experiments`}
+                        to={`/experiments?project=${getProjectId(project)}`}
                         className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       >
                         <FileImage className="w-4 h-4 mr-3" />
                         View Experiments
                       </Link>
                       <button
-                        onClick={() => handleDeleteProject(project.id)}
+                        onClick={() => handleDeleteProject(project)}
                         className="flex items-center w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
                       >
                         <Trash2 className="w-4 h-4 mr-3" />
@@ -239,7 +244,7 @@ export function Projects() {
                   </span>
                   
                   <Link
-                    to={`/projects/${project.id}`}
+                    to={`/projects/${getProjectId(project)}`}
                     className="text-sm font-medium text-blue-600 hover:text-blue-500"
                   >
                     View →
