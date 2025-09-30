@@ -11,7 +11,8 @@ import {
   Upload,
   Search,
   Activity,
-  ExternalLink
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
@@ -28,6 +29,7 @@ const navigation = [
   { name: 'Processing', href: '/processing', icon: Activity },
   { name: 'Upload', href: '/upload', icon: Upload },
   { name: 'Search', href: '/search', icon: Search },
+  { name: 'Admin', href: '/admin/users', icon: ShieldCheck },
 ];
 
 export function Layout({ children }: LayoutProps) {
