@@ -16,6 +16,7 @@ import { Processing } from './components/Processing';
 import { Upload } from './components/Upload';
 import { Search } from './components/Search';
 import { Settings } from './components/Settings';
+import { AdminUsers } from './components/AdminUsers';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -52,6 +53,7 @@ function AppContent() {
         <Route path="/upload" element={<Upload />} />
         <Route path="/search" element={<Search />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin/users" element={<AdminUsers />} />
       </Routes>
     </Layout>
   );

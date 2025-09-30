@@ -131,6 +131,29 @@ export interface XnatUser {
   };
 }
 
+export interface CreateXnatUserRequest {
+  login: string;
+  email: string;
+  firstname: string;
+  lastname: string;
+  password: string;
+  enabled?: boolean;
+  verified?: boolean;
+  roles?: string[];
+  groups?: string[];
+}
+
+export interface UpdateXnatUserRequest {
+  email?: string;
+  firstname?: string;
+  lastname?: string;
+  password?: string;
+  enabled?: boolean;
+  verified?: boolean;
+  roles?: string[];
+  groups?: string[];
+}
+
 export interface XnatContainer {
   id: string;
   status: string;
@@ -301,6 +324,46 @@ export class XnatApiClient {
         return Promise.reject(error);
       }
     );
+  }
+
+  private parseUserListResponse(data: any): XnatUser[] {
+    if (!data) return [];
+    if (Array.isArray(data)) {
+      return data as XnatUser[];
+    }
+    if (data.users) {
+      return data.users as XnatUser[];
+    }
+    if (data.ResultSet?.Result) {
+      return data.ResultSet.Result as XnatUser[];
+    }
+    if (data.items) {
+      return data.items.map((item: any) => item.data_fields) as XnatUser[];
+    }
+    return [];
+  }
+
+  private buildUserPayload(
+    user: Partial<CreateXnatUserRequest & UpdateXnatUserRequest> & { login?: string }
+  ): Record<string, any> {
+    const payload: Record<string, any> = {};
+
+    if (typeof user.login !== 'undefined') payload.login = user.login;
+    if (typeof user.email !== 'undefined') payload.email = user.email;
+    if (typeof user.firstname !== 'undefined') payload.firstname = user.firstname;
+    if (typeof user.lastname !== 'undefined') payload.lastname = user.lastname;
+    if (typeof user.password !== 'undefined' && user.password !== '') payload.password = user.password;
+    if (typeof user.enabled !== 'undefined') payload.enabled = user.enabled;
+    if (typeof user.verified !== 'undefined') payload.verified = user.verified;
+
+    if (user.roles || user.groups) {
+      payload.authorization = {
+        roles: user.roles ?? [],
+        groups: user.groups ?? [],
+      };
+    }
+
+    return payload;
   }
 
   // Authentication methods
@@ -533,13 +596,34 @@ export class XnatApiClient {
 
   // User management methods
   async getUsers(): Promise<XnatUser[]> {
-    const response = await this.client.get('/data/users');
-    return response.data.ResultSet.Result || [];
+    try {
+      const response = await this.client.get('/xapi/users', {
+        params: { format: 'json' }
+      });
+      return this.parseUserListResponse(response.data);
+    } catch (error) {
+      console.warn('Falling back to legacy user list endpoint', error);
+      const response = await this.client.get('/data/users', {
+        params: { format: 'json' }
+      });
+      return this.parseUserListResponse(response.data);
+    }
   }
 
-  async getUser(username: string): Promise<XnatUser> {
-    const response = await this.client.get(`/data/users/${username}`);
-    return response.data.items[0].data_fields;
+  async getUser(userId: string | number): Promise<XnatUser> {
+    const identifier = String(userId);
+    try {
+      const response = await this.client.get(`/xapi/users/${identifier}`, {
+        params: { format: 'json' }
+      });
+      return response.data;
+    } catch (error) {
+      console.warn('Falling back to legacy user endpoint', error);
+      const response = await this.client.get(`/data/users/${identifier}`, {
+        params: { format: 'json' }
+      });
+      return response.data.items?.[0]?.data_fields || response.data;
+    }
   }
 
   async getCurrentUser(): Promise<XnatUser> {
@@ -549,18 +633,53 @@ export class XnatApiClient {
     return response.data;
   }
 
-  async createUser(user: Partial<XnatUser>): Promise<XnatUser> {
-    const response = await this.client.put(`/data/users/${user.login}`, user);
-    return response.data;
+  async createUser(user: CreateXnatUserRequest): Promise<XnatUser> {
+    const payload = this.buildUserPayload(user);
+
+    try {
+      const response = await this.client.post('/xapi/users', payload);
+      return response.data;
+    } catch (error) {
+      console.warn('Falling back to legacy user creation endpoint', error);
+      const legacyPayload = { ...payload };
+      if (legacyPayload.authorization) {
+        legacyPayload.roles = legacyPayload.authorization.roles;
+        legacyPayload.groups = legacyPayload.authorization.groups;
+        delete legacyPayload.authorization;
+      }
+      const response = await this.client.put(`/data/users/${user.login}`, legacyPayload);
+      return response.data;
+    }
   }
 
-  async updateUser(username: string, user: Partial<XnatUser>): Promise<XnatUser> {
-    const response = await this.client.put(`/data/users/${username}`, user);
-    return response.data;
+  async updateUser(userId: string | number, updates: UpdateXnatUserRequest): Promise<XnatUser> {
+    const identifier = String(userId);
+    const payload = this.buildUserPayload(updates);
+
+    try {
+      const response = await this.client.put(`/xapi/users/${identifier}`, payload);
+      return response.data;
+    } catch (error) {
+      console.warn('Falling back to legacy user update endpoint', error);
+      const legacyPayload = { ...payload };
+      if (legacyPayload.authorization) {
+        legacyPayload.roles = legacyPayload.authorization.roles;
+        legacyPayload.groups = legacyPayload.authorization.groups;
+        delete legacyPayload.authorization;
+      }
+      const response = await this.client.put(`/data/users/${identifier}`, legacyPayload);
+      return response.data;
+    }
   }
 
-  async deleteUser(username: string): Promise<void> {
-    await this.client.delete(`/data/users/${username}`);
+  async deleteUser(userId: string | number): Promise<void> {
+    const identifier = String(userId);
+    try {
+      await this.client.delete(`/xapi/users/${identifier}`);
+    } catch (error) {
+      console.warn('Falling back to legacy user deletion endpoint', error);
+      await this.client.delete(`/data/users/${identifier}`);
+    }
   }
 
   // Search methods
