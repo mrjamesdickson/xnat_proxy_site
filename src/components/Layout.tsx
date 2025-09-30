@@ -12,11 +12,13 @@ import {
   Search,
   Activity,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  BookOpen
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { ChatWidget } from './ChatWidget';
+import { TopNavigation } from './TopNavigation';
 
 interface LayoutProps {
   children: ReactNode;
@@ -30,6 +32,7 @@ const navigation = [
   { name: 'Processing', href: '/processing', icon: Activity },
   { name: 'Upload', href: '/upload', icon: Upload },
   { name: 'Search', href: '/search', icon: Search },
+  { name: 'API Explorer', href: '/api', icon: BookOpen },
   { name: 'Admin', href: '/admin/users', icon: ShieldCheck },
 ];
 
@@ -150,6 +153,8 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col relative">
+        {!isViewerRoute && <TopNavigation />}
+
         {/* Top Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 flex-shrink-0">
           <div className="px-4 sm:px-6 lg:px-8">

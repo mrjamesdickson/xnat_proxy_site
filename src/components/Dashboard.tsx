@@ -10,7 +10,6 @@ import {
   BarChart3,
   PieChart,
   Calendar,
-  Database
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
@@ -125,8 +124,8 @@ export function Dashboard() {
       color: 'bg-blue-500',
       href: '/projects',
       loading: projectsLoading,
-      change: '+12%',
-      changeType: 'positive'
+      change: null,
+      changeType: 'neutral'
     },
     {
       name: 'Subjects',
@@ -135,8 +134,8 @@ export function Dashboard() {
       color: 'bg-green-500',
       href: '/subjects',
       loading: subjectsLoading,
-      change: '+23%',
-      changeType: 'positive'
+      change: null,
+      changeType: 'neutral'
     },
     {
       name: 'Experiments',
@@ -145,18 +144,8 @@ export function Dashboard() {
       color: 'bg-purple-500',
       href: '/experiments',
       loading: experimentsLoading,
-      change: '+18%',
-      changeType: 'positive'
-    },
-    {
-      name: 'Total Data Size',
-      value: '2.4TB',
-      icon: Database,
-      color: 'bg-orange-500',
-      href: '/experiments',
-      loading: false,
-      change: '+5%',
-      changeType: 'positive'
+      change: null,
+      changeType: 'neutral'
     },
   ];
 
@@ -467,36 +456,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* System Health Indicators */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Database className="h-5 w-5 mr-2 text-green-600" />
-          System Health
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="flex items-center">
-            <div className="w-3 h-3 bg-green-400 rounded-full mr-3"></div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">Database</div>
-              <div className="text-xs text-gray-500">Online</div>
-            </div>
-          </div>
-          <div className="flex items-center">
-            <div className="w-3 h-3 bg-green-400 rounded-full mr-3"></div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">Storage</div>
-              <div className="text-xs text-gray-500">67% Used</div>
-            </div>
-          </div>
-          <div className="flex items-center">
-            <div className="w-3 h-3 bg-yellow-400 rounded-full mr-3"></div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">Processing</div>
-              <div className="text-xs text-gray-500">3 Jobs Queued</div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
