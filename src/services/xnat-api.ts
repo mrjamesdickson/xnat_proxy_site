@@ -114,28 +114,39 @@ export interface XnatFile {
 }
 
 export interface XnatUser {
-  id: number;
+  id: number | string;
+  xdat_user_id?: number | string;
   login: string;
-  firstname: string;
-  lastname: string;
-  email: string;
-  enabled: boolean;
-  verified: boolean;
+  username?: string;
+  firstname?: string;
+  firstName?: string;
+  lastname?: string;
+  lastName?: string;
+  email?: string;
+  enabled?: boolean;
+  verified?: boolean;
   last_modified?: string;
-  xdat_user_id: number;
-  primary_password?: string;
-  salt?: string;
+  lastModified?: string;
+  lastSuccessfulLogin?: string;
+  last_login?: string;
+  last_login_date?: string;
+  roles?: string[];
+  groups?: string[];
   authorization?: {
     groups: string[];
     roles: string[];
   };
+  [key: string]: unknown;
 }
 
 export interface CreateXnatUserRequest {
-  login: string;
+  login?: string;
+  username: string;
   email: string;
-  firstname: string;
-  lastname: string;
+  firstname?: string;
+  firstName?: string;
+  lastname?: string;
+  lastName?: string;
   password: string;
   enabled?: boolean;
   verified?: boolean;
@@ -146,12 +157,28 @@ export interface CreateXnatUserRequest {
 export interface UpdateXnatUserRequest {
   email?: string;
   firstname?: string;
+  firstName?: string;
   lastname?: string;
+  lastName?: string;
   password?: string;
   enabled?: boolean;
   verified?: boolean;
   roles?: string[];
   groups?: string[];
+}
+
+export type XnatUserRoleMap = Record<string, string[]>;
+
+export type XnatActiveUserSessions = Record<string, { sessions: string[]; count: number }>;
+
+export interface XnatUserAuthDetail {
+  authMethod: string;
+  authMethodId?: string;
+  authUser?: string;
+  lastLoginAttempt?: string | number;
+  lastSuccessfulLogin?: string | number;
+  failedLoginAttempts?: number;
+  [key: string]: unknown;
 }
 
 export interface XnatContainer {
@@ -218,7 +245,7 @@ export interface XnatWorkflow {
   percent_complete?: number;
   category?: string;
   'external-id'?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export interface XnatProcess {
@@ -252,6 +279,8 @@ export interface XnatSystemStats {
   uptime: number;
   version: string;
 }
+
+type UnknownRecord = Record<string, unknown>;
 
 export class XnatApiClient {
   private client: AxiosInstance;
@@ -290,6 +319,191 @@ export class XnatApiClient {
     this.setupInterceptors();
   }
 
+  private extractString(source: UnknownRecord | undefined, keys: string[]): string | undefined {
+    if (!source) return undefined;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) return trimmed;
+      }
+      if (typeof value === 'number') {
+        return String(value);
+      }
+      if (typeof value === 'boolean') {
+        return value ? 'true' : 'false';
+      }
+    }
+    return undefined;
+  }
+
+  private extractNumber(source: UnknownRecord | undefined, keys: string[]): number | undefined {
+    if (!source) return undefined;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        return value;
+      }
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^-?\d+$/.test(trimmed)) {
+          const num = Number.parseInt(trimmed, 10);
+          if (!Number.isNaN(num)) {
+            return num;
+          }
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private toBooleanValue(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return false;
+      if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+      return true;
+    }
+    return Boolean(value);
+  }
+
+  private extractBoolean(source: UnknownRecord | undefined, keys: string[], fallback?: boolean): boolean | undefined {
+    if (!source) return fallback;
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      const value = source[key];
+      if (value === undefined || value === null) return fallback;
+      return this.toBooleanValue(value);
+    }
+    return fallback;
+  }
+
+  private toStringArray(value: unknown): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item : String(item)))
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(/[\s,;|]+/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+    }
+    return [String(value).trim()].filter(Boolean);
+  }
+
+  private extractList(source: UnknownRecord | undefined, keys: string[]): string[] {
+    if (!source) return [];
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+      return this.toStringArray(source[key]);
+    }
+    return [];
+  }
+
+  private normalizeUserRecord(raw: UnknownRecord): XnatUser {
+    const username = this.extractString(raw, ['username', 'login', 'LOGIN']) || '';
+    const numericId = this.extractNumber(raw, ['xdat_user_id', 'id', 'ID', 'userId']);
+    const firstName = this.extractString(raw, ['firstName', 'firstname', 'Firstname', 'FIRSTNAME']);
+    const lastName = this.extractString(raw, ['lastName', 'lastname', 'Lastname', 'LASTNAME']);
+    const email = this.extractString(raw, ['email', 'Email', 'EMAIL', 'mail', 'MAIL']);
+    const enabled = this.extractBoolean(raw, ['enabled', 'ENABLED', 'status']);
+    const verified = this.extractBoolean(raw, ['verified', 'VERIFIED']);
+    const roles = this.extractList(raw, ['roles', 'Roles']);
+    const groups = this.extractList(raw, ['groups', 'Groups']);
+    const lastModified = this.extractString(raw, ['lastModified', 'last_modified']);
+    const lastSuccessfulLogin =
+      this.extractString(raw, ['lastSuccessfulLogin', 'last_successful_login', 'last_login', 'lastLogin']) ||
+      this.extractString(raw, ['LAST_SUCCESSFUL_LOGIN']);
+
+    const login = username || (numericId !== undefined ? String(numericId) : '');
+    const idValue = numericId ?? raw.xdat_user_id ?? raw.id ?? raw.ID ?? login;
+
+    const authorization = (raw.authorization as { roles?: string[]; groups?: string[] }) || {
+      roles,
+      groups,
+    };
+
+    const normalized: XnatUser = {
+      ...raw,
+      id: idValue,
+      xdat_user_id: raw.xdat_user_id ?? numericId ?? raw.id ?? raw.ID,
+      login,
+      username: username || raw.username,
+      firstname: firstName ?? raw.firstname,
+      firstName: firstName ?? raw.firstName,
+      lastname: lastName ?? raw.lastname,
+      lastName: lastName ?? raw.lastName,
+      email: email ?? raw.email,
+      enabled: enabled ?? raw.enabled,
+      verified: verified ?? raw.verified,
+      last_modified: lastModified ?? raw.last_modified,
+      lastModified: lastModified ?? raw.lastModified,
+      lastSuccessfulLogin: lastSuccessfulLogin ?? raw.lastSuccessfulLogin,
+      roles: roles.length ? roles : raw.roles,
+      groups: groups.length ? groups : raw.groups,
+      authorization,
+    };
+
+    if (!normalized.authorization) {
+      normalized.authorization = {
+        roles: normalized.roles ?? [],
+        groups: normalized.groups ?? [],
+      };
+    }
+
+    return normalized;
+  }
+
+  private parseUserListResponse(data: unknown): XnatUser[] {
+    if (!data) return [];
+
+    const normalizeArray = (items: unknown[]): XnatUser[] =>
+      items
+        .filter((item): item is UnknownRecord => typeof item === 'object' && item !== null)
+        .map((item) => this.normalizeUserRecord(item));
+
+    if (Array.isArray(data)) {
+      return normalizeArray(data);
+    }
+
+    const recordData = data as UnknownRecord;
+
+    if (Array.isArray(recordData.users)) {
+      return normalizeArray(recordData.users);
+    }
+
+    const resultSet = recordData.ResultSet as UnknownRecord | undefined;
+    if (Array.isArray(resultSet?.Result)) {
+      return normalizeArray(resultSet.Result);
+    }
+
+    if (Array.isArray(recordData.items)) {
+      return normalizeArray(
+        recordData.items.map((item) =>
+          typeof item === 'object' && item !== null && 'data_fields' in item
+            ? ((item as UnknownRecord).data_fields as UnknownRecord)
+            : (item as UnknownRecord)
+        )
+      );
+    }
+
+    if (typeof data === 'object' && data !== null) {
+      return [this.normalizeUserRecord(recordData)];
+    }
+
+    return [];
+  }
+
   private setupInterceptors() {
     this.client.interceptors.response.use(
       (response) => response,
@@ -326,44 +540,67 @@ export class XnatApiClient {
     );
   }
 
-  private parseUserListResponse(data: any): XnatUser[] {
-    if (!data) return [];
-    if (Array.isArray(data)) {
-      return data as XnatUser[];
-    }
-    if (data.users) {
-      return data.users as XnatUser[];
-    }
-    if (data.ResultSet?.Result) {
-      return data.ResultSet.Result as XnatUser[];
-    }
-    if (data.items) {
-      return data.items.map((item: any) => item.data_fields) as XnatUser[];
-    }
-    return [];
-  }
-
   private buildUserPayload(
-    user: Partial<CreateXnatUserRequest & UpdateXnatUserRequest> & { login?: string }
-  ): Record<string, any> {
-    const payload: Record<string, any> = {};
+    user: Partial<CreateXnatUserRequest & UpdateXnatUserRequest> & { login?: string; username?: string }
+  ): { username: string; xapi: Record<string, unknown>; legacy: Record<string, unknown> } {
+    const username = (user.username ?? user.login ?? '').trim();
+    const firstName = user.firstName ?? user.firstname;
+    const lastName = user.lastName ?? user.lastname;
+    const email = user.email;
+    const enabled = user.enabled;
+    const verified = user.verified;
+    const roles = user.roles ?? [];
+    const groups = user.groups ?? [];
 
-    if (typeof user.login !== 'undefined') payload.login = user.login;
-    if (typeof user.email !== 'undefined') payload.email = user.email;
-    if (typeof user.firstname !== 'undefined') payload.firstname = user.firstname;
-    if (typeof user.lastname !== 'undefined') payload.lastname = user.lastname;
-    if (typeof user.password !== 'undefined' && user.password !== '') payload.password = user.password;
-    if (typeof user.enabled !== 'undefined') payload.enabled = user.enabled;
-    if (typeof user.verified !== 'undefined') payload.verified = user.verified;
+    const xapiPayload: Record<string, unknown> = {};
+    const legacyPayload: Record<string, unknown> = {};
 
-    if (user.roles || user.groups) {
-      payload.authorization = {
-        roles: user.roles ?? [],
-        groups: user.groups ?? [],
-      };
+    if (username) {
+      xapiPayload.username = username;
+      legacyPayload.login = username;
     }
 
-    return payload;
+    if (typeof email !== 'undefined') {
+      xapiPayload.email = email;
+      legacyPayload.email = email;
+    }
+
+    if (typeof firstName !== 'undefined') {
+      xapiPayload.firstName = firstName;
+      legacyPayload.firstname = firstName;
+    }
+
+    if (typeof lastName !== 'undefined') {
+      xapiPayload.lastName = lastName;
+      legacyPayload.lastname = lastName;
+    }
+
+    if (typeof user.password !== 'undefined' && user.password !== '') {
+      xapiPayload.password = user.password;
+      legacyPayload.password = user.password;
+    }
+
+    if (typeof enabled !== 'undefined') {
+      xapiPayload.enabled = enabled;
+      legacyPayload.enabled = enabled;
+    }
+
+    if (typeof verified !== 'undefined') {
+      xapiPayload.verified = verified;
+      legacyPayload.verified = verified;
+    }
+
+    if (roles.length) {
+      xapiPayload.roles = roles;
+      legacyPayload.roles = roles;
+    }
+
+    if (groups.length) {
+      xapiPayload.groups = groups;
+      legacyPayload.groups = groups;
+    }
+
+    return { username, xapi: xapiPayload, legacy: legacyPayload };
   }
 
   // Authentication methods
@@ -595,15 +832,19 @@ export class XnatApiClient {
   }
 
   // User management methods
-  async getUsers(): Promise<XnatUser[]> {
+  async getUsers(options?: { scope?: 'current' | 'all' }): Promise<XnatUser[]> {
+    const scope = options?.scope ?? 'current';
+    const endpoint = scope === 'all' ? '/xapi/users/profiles' : '/xapi/users/current';
+
     try {
-      const response = await this.client.get('/xapi/users', {
+      const response = await this.client.get(endpoint, {
         params: { format: 'json' }
       });
       return this.parseUserListResponse(response.data);
     } catch (error) {
       console.warn('Falling back to legacy user list endpoint', error);
-      const response = await this.client.get('/data/users', {
+      const legacyEndpoint = scope === 'all' ? '/data/users' : '/data/users';
+      const response = await this.client.get(legacyEndpoint, {
         params: { format: 'json' }
       });
       return this.parseUserListResponse(response.data);
@@ -613,16 +854,15 @@ export class XnatApiClient {
   async getUser(userId: string | number): Promise<XnatUser> {
     const identifier = String(userId);
     try {
-      const response = await this.client.get(`/xapi/users/${identifier}`, {
-        params: { format: 'json' }
-      });
-      return response.data;
+      const encoded = encodeURIComponent(identifier);
+      const response = await this.client.get(`/xapi/users/profile/${encoded}`);
+      return this.parseUserListResponse(response.data)[0];
     } catch (error) {
       console.warn('Falling back to legacy user endpoint', error);
       const response = await this.client.get(`/data/users/${identifier}`, {
         params: { format: 'json' }
       });
-      return response.data.items?.[0]?.data_fields || response.data;
+      return this.parseUserListResponse(response.data)[0];
     }
   }
 
@@ -634,56 +874,103 @@ export class XnatApiClient {
   }
 
   async createUser(user: CreateXnatUserRequest): Promise<XnatUser> {
-    const payload = this.buildUserPayload(user);
+    const { username, xapi, legacy } = this.buildUserPayload(user);
+    if (!username) {
+      throw new Error('Username is required to create an XNAT user');
+    }
 
     try {
-      const response = await this.client.post('/xapi/users', payload);
-      return response.data;
+      const response = await this.client.post('/xapi/users', xapi);
+      return this.normalizeUserRecord(response.data);
     } catch (error) {
       console.warn('Falling back to legacy user creation endpoint', error);
-      const legacyPayload = { ...payload };
-      if (legacyPayload.authorization) {
-        legacyPayload.roles = legacyPayload.authorization.roles;
-        legacyPayload.groups = legacyPayload.authorization.groups;
-        delete legacyPayload.authorization;
-      }
-      const response = await this.client.put(`/data/users/${user.login}`, legacyPayload);
-      return response.data;
+      const response = await this.client.put(`/data/users/${encodeURIComponent(username)}`, legacy);
+      return this.normalizeUserRecord(response.data);
     }
   }
 
   async updateUser(userId: string | number, updates: UpdateXnatUserRequest): Promise<XnatUser> {
     const identifier = String(userId);
-    const payload = this.buildUserPayload(updates);
+    const { username, xapi, legacy } = this.buildUserPayload({ ...updates, username: identifier });
+    const target = encodeURIComponent(username || identifier);
 
     try {
-      const response = await this.client.put(`/xapi/users/${identifier}`, payload);
-      return response.data;
+      const response = await this.client.put(`/xapi/users/${target}`, xapi);
+      return this.normalizeUserRecord(response.data);
     } catch (error) {
       console.warn('Falling back to legacy user update endpoint', error);
-      const legacyPayload = { ...payload };
-      if (legacyPayload.authorization) {
-        legacyPayload.roles = legacyPayload.authorization.roles;
-        legacyPayload.groups = legacyPayload.authorization.groups;
-        delete legacyPayload.authorization;
-      }
-      const response = await this.client.put(`/data/users/${identifier}`, legacyPayload);
-      return response.data;
+      const response = await this.client.put(`/data/users/${target}`, legacy);
+      return this.normalizeUserRecord(response.data);
     }
   }
 
   async deleteUser(userId: string | number): Promise<void> {
     const identifier = String(userId);
     try {
-      await this.client.delete(`/xapi/users/${identifier}`);
+      await this.client.delete(`/xapi/users/${encodeURIComponent(identifier)}`);
     } catch (error) {
       console.warn('Falling back to legacy user deletion endpoint', error);
       await this.client.delete(`/data/users/${identifier}`);
     }
   }
 
+  async getUserRoleMap(): Promise<XnatUserRoleMap> {
+    try {
+      const response = await this.client.get('/xapi/users/rolemap');
+      return response.data || {};
+    } catch (error) {
+      console.warn('Failed to fetch user role map', error);
+      return {};
+    }
+  }
+
+  async getActiveUsers(): Promise<XnatActiveUserSessions> {
+    try {
+      const response = await this.client.get('/xapi/users/active');
+      return response.data || {};
+    } catch (error) {
+      console.warn('Failed to fetch active user sessions', error);
+      return {};
+    }
+  }
+
+  async getUserRoles(username: string): Promise<string[]> {
+    try {
+      const response = await this.client.get(`/xapi/users/${encodeURIComponent(username)}/roles`);
+      return this.toStringArray(response.data);
+    } catch (error) {
+      console.warn('Failed to fetch user roles', error);
+      return [];
+    }
+  }
+
+  async setUserVerified(username: string, verified: boolean): Promise<void> {
+    await this.client.put(`/xapi/users/${encodeURIComponent(username)}/verified/${verified}`);
+  }
+
+  async setUserEnabled(username: string, enabled: boolean): Promise<void> {
+    await this.client.put(`/xapi/users/${encodeURIComponent(username)}/enabled/${enabled}`);
+  }
+
+  async killUserSessions(username: string): Promise<void> {
+    await this.client.delete(`/xapi/users/active/${encodeURIComponent(username)}`);
+  }
+
+  async getUserAuthDetails(username: string): Promise<XnatUserAuthDetail[]> {
+    try {
+      const response = await this.client.get(`/xapi/users/authDetails/${encodeURIComponent(username)}`);
+      if (Array.isArray(response.data)) {
+        return response.data as XnatUserAuthDetail[];
+      }
+      return [];
+    } catch (error) {
+      console.warn('Failed to fetch user authentication details', error);
+      return [];
+    }
+  }
+
   // Search methods
-  async search(searchXml: string): Promise<any[]> {
+  async search(searchXml: string): Promise<unknown[]> {
     const response = await this.client.post('/data/search', searchXml, {
       headers: {
         'Content-Type': 'application/xml',
@@ -695,7 +982,7 @@ export class XnatApiClient {
     return response.data.ResultSet.Result || [];
   }
 
-  async savedSearch(searchId: string, params?: Record<string, any>): Promise<any[]> {
+  async savedSearch(searchId: string, params?: Record<string, unknown>): Promise<unknown[]> {
     const response = await this.client.get(`/data/search/saved/${searchId}`, {
       params: {
         format: 'json',
@@ -706,7 +993,7 @@ export class XnatApiClient {
   }
 
   // System methods
-  async getSystemInfo(): Promise<any> {
+  async getSystemInfo(): Promise<unknown> {
     const response = await this.client.get('/data/version');
     return response.data;
   }
@@ -727,8 +1014,8 @@ export class XnatApiClient {
         params: { format: 'json' }
       });
       return response.data || [];
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
         console.warn('Container service not available on this XNAT server');
         return [];
       }
@@ -768,7 +1055,7 @@ export class XnatApiClient {
   }): Promise<XnatWorkflow[]> {
     try {
       // Use GET request with query parameters since POST is not supported
-      const params: any = { format: 'json' };
+      const params: Record<string, unknown> = { format: 'json' };
       
       // Add optional filtering parameters if provided
       if (options?.id) params.id = options.id;
@@ -780,12 +1067,12 @@ export class XnatApiClient {
       
       // Handle different possible response formats
       return response.data?.ResultSet?.Result || response.data?.results || response.data || [];
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
         console.warn('Workflows endpoint not available on this XNAT server');
         return [];
       }
-      if (error.response?.status === 405) {
+      if (axios.isAxiosError(error) && error.response?.status === 405) {
         console.warn('Workflows endpoint does not support the requested method');
         return [];
       }
