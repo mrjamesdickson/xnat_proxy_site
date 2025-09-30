@@ -6,7 +6,6 @@ import {
   FileImage, 
   Activity,
   TrendingUp,
-  Clock,
   AlertCircle,
   BarChart3,
   PieChart,
@@ -27,14 +26,21 @@ import {
   PieChart as RechartsPieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
   Area,
   AreaChart
 } from 'recharts';
 
 // Chart colors
 const COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#84CC16', '#F97316'];
+
+const getProjectIdentifier = (project: any): string =>
+  project?.id || project?.ID || project?.name || project?.Name || '';
+
+const getSubjectProject = (subject: any): string =>
+  subject?.project || subject?.PROJECT || subject?.project_id || subject?.PROJECT_ID || '';
+
+const getExperimentProject = (experiment: any): string =>
+  experiment?.project || experiment?.PROJECT || experiment?.project_id || experiment?.PROJECT_ID || '';
 
 export function Dashboard() {
   const { client, currentUser } = useXnat();
@@ -63,11 +69,12 @@ export function Dashboard() {
 
     // Project distribution data
     const projectData = projects.map(project => {
-      const projectSubjects = subjects.filter(s => s.project === project.id || s.project === project.ID || s.project === project.name);
-      const projectExperiments = experiments.filter(e => e.project === project.id || e.project === project.ID || e.project === project.name);
-      
+      const identifier = getProjectIdentifier(project);
+      const projectSubjects = subjects.filter((subject) => getSubjectProject(subject) === identifier);
+      const projectExperiments = experiments.filter((experiment) => getExperimentProject(experiment) === identifier);
+
       return {
-        name: project.name || project.id || project.ID || 'Unknown',
+        name: project.name || project.id || identifier || 'Unknown',
         subjects: projectSubjects.length,
         experiments: projectExperiments.length,
         value: projectSubjects.length + projectExperiments.length
@@ -302,7 +309,7 @@ export function Dashboard() {
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
                   >
                     {chartData.experimentTypesData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

@@ -7,7 +7,6 @@ import {
   User,
   Folder,
   Activity,
-  Clock,
   Camera,
   FileImage,
   Settings,

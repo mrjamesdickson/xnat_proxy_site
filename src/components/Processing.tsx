@@ -23,7 +23,7 @@ import {
   Calendar
 } from 'lucide-react';
 import clsx from 'clsx';
-import type { XnatContainer, XnatWorkflow, XnatProcess, XnatSystemStats } from '../services/xnat-api';
+import type { XnatContainer, XnatWorkflow } from '../services/xnat-api';
 
 export function Processing() {
   const { client } = useXnat();
@@ -31,7 +31,6 @@ export function Processing() {
   const [statusFilter, setStatusFilter] = useState<'all' | string>('all');
   const [selectedContainer, setSelectedContainer] = useState<XnatContainer | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<XnatWorkflow | null>(null);
-  const [selectedProcess, setSelectedProcess] = useState<XnatProcess | null>(null);
   const [workflowFilters, setWorkflowFilters] = useState({
     page: 1,
     id: "",
@@ -673,13 +672,9 @@ export function Processing() {
                           </div>
                         </div>
                         
-                        <button
-                          onClick={() => setSelectedProcess(process)}
-                          className="p-1 text-gray-400 hover:text-gray-600"
-                          title="View Details"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                        <span className="p-1" title="View details in XNAT">
+                          <Eye className="h-4 w-4 text-gray-400" />
+                        </span>
                       </div>
                     </div>
                   </div>

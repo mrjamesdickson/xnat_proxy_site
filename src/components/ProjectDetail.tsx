@@ -8,7 +8,6 @@ import {
   FileImage,
   User,
   Calendar,
-  Settings,
   Activity,
   Eye
 } from 'lucide-react';
