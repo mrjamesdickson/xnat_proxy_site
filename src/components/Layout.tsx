@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
+import { ChatWidget } from './ChatWidget';
 
 interface LayoutProps {
   children: ReactNode;
@@ -146,7 +147,7 @@ export function Layout({ children }: LayoutProps) {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col relative">
         {/* Top Header */}
         <header className="bg-white shadow-sm border-b border-gray-200 flex-shrink-0">
           <div className="px-4 sm:px-6 lg:px-8">
@@ -268,6 +269,7 @@ export function Layout({ children }: LayoutProps) {
             {children}
           </main>
         )}
+        {!isViewerRoute && <ChatWidget />}
       </div>
     </div>
   );
