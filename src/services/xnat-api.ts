@@ -43,6 +43,28 @@ export interface XnatSubject {
   birth_weight?: string;
 }
 
+export interface XnatProjectAccess {
+  ID: string;
+  name?: string;
+  description?: string;
+  secondary_ID?: string;
+  role?: string;
+  group_id?: string;
+  URI?: string;
+  [key: string]: unknown;
+}
+
+export interface XnatSavedSearch {
+  id?: string;
+  ID?: string;
+  title?: string;
+  description?: string;
+  owner?: string;
+  element_name?: string;
+  shares?: number;
+  [key: string]: unknown;
+}
+
 export interface XnatExperiment {
   id: string;
   label: string;
@@ -234,18 +256,28 @@ export interface XnatMountFile {
 }
 
 export interface XnatWorkflow {
-  id: string;
-  status: 'In Progress' | 'Complete' | 'Failed' | 'Queued';
-  'pipeline-name': string;
-  'data-type': string;
-  'step-id': string;
-  'step-description': string;
-  launch_time: string;
-  current_step_launch_time?: string;
+  id?: string | number;
+  wfid?: number;
+  label?: string;
+  externalId?: string;
+  status?: string;
+  pipelineName?: string;
+  'pipeline-name'?: string;
+  dataType?: string;
+  'data-type'?: string;
+  launchTime?: number | string;
+  launch_time?: number | string;
+  modTime?: number | string;
+  current_step_launch_time?: number | string;
   percent_complete?: number;
-  category?: string;
-  'external-id'?: string;
-  details?: Record<string, unknown>;
+  percentageComplete?: number;
+  stepDescription?: string;
+  'step-description'?: string;
+  createUser?: string;
+  details?: string | Record<string, unknown>;
+  comments?: string;
+  justification?: string;
+  [key: string]: unknown;
 }
 
 export interface XnatProcess {
@@ -268,19 +300,51 @@ export interface XnatProcess {
 }
 
 export interface XnatSystemStats {
-  cpu_usage: number;
-  memory_usage: number;
-  memory_total: number;
-  disk_usage: number;
-  disk_total: number;
-  active_jobs: number;
-  queued_jobs: number;
-  active_processes: number;
-  uptime: number;
-  version: string;
+  cpu_usage?: number;
+  memory_usage?: number;
+  memory_total?: number;
+  disk_usage?: number;
+  disk_total?: number;
+  active_jobs?: number;
+  queued_jobs?: number;
+  active_processes?: number;
+  uptime?: number;
+  version?: string;
 }
 
 type UnknownRecord = Record<string, unknown>;
+
+export interface OpenApiTag {
+  name: string;
+  description?: string;
+}
+
+export interface OpenApiOperation {
+  tags?: string[];
+  summary?: string;
+  description?: string;
+  operationId?: string;
+  deprecated?: boolean;
+  [key: string]: unknown;
+}
+
+export interface OpenApiSpec {
+  swagger?: string;
+  openapi?: string;
+  info?: {
+    title?: string;
+    version?: string;
+    description?: string;
+    [key: string]: unknown;
+  };
+  basePath?: string;
+  servers?: Array<{ url?: string; description?: string }>;
+  tags?: OpenApiTag[];
+  paths?: Record<string, Record<string, OpenApiOperation>>;
+  [key: string]: unknown;
+}
+
+const FALLBACK_OPENAPI_PATH = '/xnat-api-docs.json';
 
 export class XnatApiClient {
   private client: AxiosInstance;
@@ -428,29 +492,37 @@ export class XnatApiClient {
     const login = username || (numericId !== undefined ? String(numericId) : '');
     const idValue = numericId ?? raw.xdat_user_id ?? raw.id ?? raw.ID ?? login;
 
-    const authorization = (raw.authorization as { roles?: string[]; groups?: string[] }) || {
-      roles,
-      groups,
+    const rawAuthorization = raw.authorization as { roles?: unknown; groups?: unknown } | undefined;
+    const authRoles = Array.isArray(rawAuthorization?.roles)
+      ? rawAuthorization!.roles.filter((role): role is string => typeof role === 'string' && role.trim().length > 0)
+      : roles;
+    const authGroups = Array.isArray(rawAuthorization?.groups)
+      ? rawAuthorization!.groups.filter((group): group is string => typeof group === 'string' && group.trim().length > 0)
+      : groups;
+
+    const authorization = {
+      roles: authRoles.length ? authRoles : [],
+      groups: authGroups.length ? authGroups : [],
     };
 
     const normalized: XnatUser = {
-      ...raw,
-      id: idValue,
-      xdat_user_id: raw.xdat_user_id ?? numericId ?? raw.id ?? raw.ID,
+      ...(raw as XnatUser),
+      id: idValue as number | string,
+      xdat_user_id: (raw.xdat_user_id ?? numericId ?? raw.id ?? raw.ID) as number | string | undefined,
       login,
-      username: username || raw.username,
-      firstname: firstName ?? raw.firstname,
-      firstName: firstName ?? raw.firstName,
-      lastname: lastName ?? raw.lastname,
-      lastName: lastName ?? raw.lastName,
-      email: email ?? raw.email,
-      enabled: enabled ?? raw.enabled,
-      verified: verified ?? raw.verified,
-      last_modified: lastModified ?? raw.last_modified,
-      lastModified: lastModified ?? raw.lastModified,
-      lastSuccessfulLogin: lastSuccessfulLogin ?? raw.lastSuccessfulLogin,
-      roles: roles.length ? roles : raw.roles,
-      groups: groups.length ? groups : raw.groups,
+      username: username || (typeof raw.username === 'string' ? raw.username : undefined),
+      firstname: firstName ?? (typeof raw.firstname === 'string' ? raw.firstname : undefined),
+      firstName: firstName ?? (typeof raw.firstName === 'string' ? raw.firstName : undefined),
+      lastname: lastName ?? (typeof raw.lastname === 'string' ? raw.lastname : undefined),
+      lastName: lastName ?? (typeof raw.lastName === 'string' ? raw.lastName : undefined),
+      email: email ?? (typeof raw.email === 'string' ? raw.email : undefined),
+      enabled: enabled ?? (typeof raw.enabled === 'boolean' ? raw.enabled : undefined),
+      verified: verified ?? (typeof raw.verified === 'boolean' ? raw.verified : undefined),
+      last_modified: lastModified ?? (typeof raw.last_modified === 'string' ? raw.last_modified : undefined),
+      lastModified: lastModified ?? (typeof raw.lastModified === 'string' ? raw.lastModified : undefined),
+      lastSuccessfulLogin: lastSuccessfulLogin ?? (typeof raw.lastSuccessfulLogin === 'string' ? raw.lastSuccessfulLogin : undefined),
+      roles: roles.length ? roles : Array.isArray(raw.roles) ? (raw.roles as string[]) : undefined,
+      groups: groups.length ? groups : Array.isArray(raw.groups) ? (raw.groups as string[]) : undefined,
       authorization,
     };
 
@@ -626,6 +698,38 @@ export class XnatApiClient {
       params: { format: 'json' }
     });
     return response.data.ResultSet.Result || [];
+  }
+
+  async getProjectAccess(): Promise<XnatProjectAccess[]> {
+    try {
+      const response = await this.client.get('/xapi/access/projects');
+      if (Array.isArray(response.data)) {
+        return response.data as XnatProjectAccess[];
+      }
+      if (Array.isArray(response.data?.ResultSet?.Result)) {
+        return response.data.ResultSet.Result as XnatProjectAccess[];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching project access information:', error);
+      return [];
+    }
+  }
+
+  async getSavedSearches(): Promise<XnatSavedSearch[]> {
+    try {
+      const response = await this.client.get('/data/search/saved', {
+        params: { format: 'json' },
+      });
+      const saved = response.data?.ResultSet?.Result;
+      if (Array.isArray(saved)) {
+        return saved as XnatSavedSearch[];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching saved searches:', error);
+      return [];
+    }
   }
 
   async getProject(projectId: string): Promise<XnatProject> {
@@ -1052,29 +1156,122 @@ export class XnatApiClient {
     data_type?: string;
     sortable?: boolean;
     days?: number;
+    size?: number;
+    admin_workflows?: boolean;
   }): Promise<XnatWorkflow[]> {
     try {
-      // Use GET request with query parameters since POST is not supported
-      const params: Record<string, unknown> = { format: 'json' };
-      
-      // Add optional filtering parameters if provided
-      if (options?.id) params.id = options.id;
-      if (options?.data_type) params.data_type = options.data_type;
-      if (options?.days) params.days = options.days;
-      if (options?.page) params.page = options.page;
-      
-      const response = await this.client.get('/data/workflows', { params });
-      
-      // Handle different possible response formats
-      return response.data?.ResultSet?.Result || response.data?.results || response.data || [];
-    } catch (error: unknown) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
-        console.warn('Workflows endpoint not available on this XNAT server');
+      const body: Record<string, unknown> = {
+        data_type: options?.data_type ?? 'xnat:imageSessionData',
+        days: options?.days ?? 7,
+        page: options?.page ?? 1,
+        size: options?.size ?? 50,
+        sortable: options?.sortable ?? true,
+      };
+
+      if (options?.id) {
+        body.id = options.id;
+      }
+
+      if (options?.admin_workflows) {
+        body.admin_workflows = true;
+      }
+
+      const response = await this.client.post('/xapi/workflows', body, {
+        timeout: 10000,
+      });
+
+      const rawData = Array.isArray(response.data)
+        ? response.data
+        : Array.isArray(response.data?.items)
+          ? response.data.items
+          : Array.isArray(response.data?.workflows)
+            ? response.data.workflows
+            : Array.isArray(response.data?.ResultSet?.Result)
+              ? response.data.ResultSet.Result
+              : [];
+
+      if (!Array.isArray(rawData)) {
         return [];
       }
-      if (axios.isAxiosError(error) && error.response?.status === 405) {
-        console.warn('Workflows endpoint does not support the requested method');
-        return [];
+
+      const pickIdentifier = (...values: unknown[]): string | number | undefined => {
+        for (const value of values) {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            return value;
+          }
+          if (typeof value === 'number' && !Number.isNaN(value)) {
+            return value;
+          }
+        }
+        return undefined;
+      };
+
+      const pickString = (...values: unknown[]): string | undefined => {
+        for (const value of values) {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            return value;
+          }
+        }
+        return undefined;
+      };
+
+      const pickNumber = (...values: unknown[]): number | undefined => {
+        for (const value of values) {
+          if (typeof value === 'number' && !Number.isNaN(value)) {
+            return value;
+          }
+          if (typeof value === 'string') {
+            const parsed = Number(value);
+            if (!Number.isNaN(parsed)) {
+              return parsed;
+            }
+          }
+        }
+        return undefined;
+      };
+
+      return rawData.map((item: UnknownRecord) => {
+        const idValue = pickIdentifier(item.id, item.wfid, item.ID, item['wfid']);
+        const launchValue = pickNumber(item.launchTime, item['launch_time']);
+        const modValue = pickNumber(item.modTime, item['mod_time']);
+        const currentStepValue = pickNumber(item.current_step_launch_time, item['current-step-launch-time']);
+        const percentValue = pickNumber(item.percent_complete, item.percentageComplete, item['percent-complete']);
+        const detailsValue = item.details;
+        let normalizedDetails: string | Record<string, unknown> | undefined;
+        if (typeof detailsValue === 'string') {
+          normalizedDetails = detailsValue;
+        } else if (detailsValue && typeof detailsValue === 'object') {
+          normalizedDetails = detailsValue as Record<string, unknown>;
+        }
+
+        const normalized: XnatWorkflow = {
+          ...item,
+          id: idValue,
+          wfid: typeof item.wfid === 'number' ? item.wfid : pickNumber(item.wfid),
+          externalId: pickString(item.externalId, item['external-id']),
+          pipelineName: pickString(item.pipelineName, item['pipeline-name']),
+          dataType: pickString(item.dataType, item['data-type']),
+          launchTime: launchValue,
+          modTime: modValue,
+          current_step_launch_time: currentStepValue,
+          percent_complete: percentValue,
+          stepDescription: pickString(item.stepDescription, item['step-description']),
+          createUser: pickString(item.createUser, item['create-user']),
+          status: pickString(item.status),
+          details: normalizedDetails,
+          comments: pickString(item.comments),
+          justification: pickString(item.justification),
+        };
+
+        return normalized;
+      });
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status && [401, 403, 404, 405, 500, 502, 503].includes(status)) {
+          console.warn('Workflows endpoint returned status', status);
+          return [];
+        }
       }
       console.error('Error fetching workflows:', error);
       return [];
@@ -1107,79 +1304,90 @@ export class XnatApiClient {
 
   async getProcesses(): Promise<XnatProcess[]> {
     try {
-      // Mock process data - in real implementation would query system processes
-      const mockProcesses: XnatProcess[] = [
-        {
-          id: 'proc-001',
-          name: 'DICOM Receiver',
-          status: 'ACTIVE',
-          type: 'UPLOAD',
-          user: 'system',
-          description: 'Receiving incoming DICOM files from scanner',
-          started: new Date(Date.now() - 1800000).toISOString(),
-          last_activity: new Date(Date.now() - 30000).toISOString(),
-          cpu_usage: 15.5,
-          memory_usage: 512,
-          files_processed: 1250,
-          bytes_processed: 2.1 * 1024 * 1024 * 1024
-        },
-        {
-          id: 'proc-002',
-          name: 'Image Processing Pipeline',
-          status: 'ACTIVE',
-          type: 'PROCESSING',
-          user: 'pipeline',
-          project: 'CMB-MML',
-          description: 'Running automated image processing workflows',
-          started: new Date(Date.now() - 3600000).toISOString(),
-          last_activity: new Date(Date.now() - 120000).toISOString(),
-          cpu_usage: 85.2,
-          memory_usage: 2048,
-          files_processed: 45,
-          files_total: 78,
-          bytes_processed: 5.7 * 1024 * 1024 * 1024,
-          bytes_total: 10.2 * 1024 * 1024 * 1024
-        },
-        {
-          id: 'proc-003',
-          name: 'Database Maintenance',
-          status: 'IDLE',
-          type: 'VALIDATION',
-          user: 'system',
-          description: 'Periodic database cleanup and optimization',
-          started: new Date(Date.now() - 7200000).toISOString(),
-          last_activity: new Date(Date.now() - 1800000).toISOString(),
-          cpu_usage: 2.1,
-          memory_usage: 128
-        }
-      ];
-      return mockProcesses;
+      const response = await this.client.get('/xapi/containers', {
+        params: { format: 'json' },
+        timeout: 10000,
+      });
+
+      const data = response.data;
+      if (Array.isArray(data)) {
+        return data as XnatProcess[];
+      }
+      if (Array.isArray(data?.items)) {
+        return data.items as XnatProcess[];
+      }
+      return [];
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status && [401, 403, 404, 500, 502, 503, 504].includes(status)) {
+          console.warn('Containers endpoint returned status', status);
+          return [];
+        }
+      }
       console.error('Error fetching processes:', error);
       return [];
     }
   }
 
-  async getSystemStats(): Promise<XnatSystemStats> {
+  async getSystemStats(): Promise<XnatSystemStats | null> {
     try {
-      // Mock system stats - in real implementation would query system metrics
-      const mockStats: XnatSystemStats = {
-        cpu_usage: 45.2,
-        memory_usage: 6.8,
-        memory_total: 16.0,
-        disk_usage: 2.4,
-        disk_total: 10.0,
-        active_jobs: 2,
-        queued_jobs: 3,
-        active_processes: 5,
-        uptime: 2592000, // 30 days in seconds
-        version: '1.8.7'
-      };
-      return mockStats;
+      const info = await this.getSystemInfo();
+      if (info && typeof info === 'object') {
+        const record = info as Record<string, unknown>;
+        const version = typeof record.Version === 'string'
+          ? record.Version
+          : typeof record.version === 'string'
+            ? record.version
+            : undefined;
+
+        if (version) {
+          return { version };
+        }
+      }
+      return null;
     } catch (error) {
-      console.error('Error fetching system stats:', error);
-      throw error;
+      console.warn('Error fetching system stats:', error);
+      return null;
     }
+  }
+
+  async getOpenApiSpec(): Promise<OpenApiSpec> {
+    const candidateUrls = [
+      '/xapi/api-docs?format=json',
+      '/xapi/api-docs',
+      '/xapi/swagger.json',
+      '/xapi/api/swagger.json',
+    ];
+
+    let lastError: unknown;
+
+    for (const url of candidateUrls) {
+      try {
+        const response = await this.client.get(url, { responseType: 'json' });
+        if (response?.data && typeof response.data === 'object') {
+          return response.data as OpenApiSpec;
+        }
+      } catch (error) {
+        lastError = error;
+        console.warn(`Failed to fetch OpenAPI spec from ${url}`, error);
+      }
+    }
+
+    try {
+      const fallbackResponse = await axios.get(FALLBACK_OPENAPI_PATH, { responseType: 'json' });
+      if (fallbackResponse?.data && typeof fallbackResponse.data === 'object') {
+        return fallbackResponse.data as OpenApiSpec;
+      }
+    } catch (fallbackError) {
+      console.error('Failed to load fallback OpenAPI spec', fallbackError);
+      if (lastError) {
+        throw lastError;
+      }
+      throw fallbackError;
+    }
+
+    throw lastError ?? new Error('Unable to load OpenAPI specification.');
   }
 
   // Utility methods

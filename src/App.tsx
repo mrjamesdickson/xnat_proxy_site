@@ -17,6 +17,7 @@ import { Upload } from './components/Upload';
 import { Search } from './components/Search';
 import { Settings } from './components/Settings';
 import { AdminUsers } from './components/AdminUsers';
+import { ApiExplorer } from './components/ApiExplorer';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -54,6 +55,7 @@ function AppContent() {
         <Route path="/search" element={<Search />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/api" element={<ApiExplorer />} />
       </Routes>
     </Layout>
   );
