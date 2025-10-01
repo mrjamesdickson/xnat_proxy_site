@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
@@ -207,6 +207,8 @@ export function Processing() {
   const [days, setDays] = useState<number>(7);
   const [adminWorkflows, setAdminWorkflows] = useState(false);
   const [dismissedCallouts, setDismissedCallouts] = useState({ active: false, failed: false });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -272,6 +274,43 @@ export function Processing() {
       return dateB - dateA;
     });
   }, [workflows]);
+
+  const totalPages = useMemo(() => {
+    if (sortedWorkflows.length === 0) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(sortedWorkflows.length / pageSize));
+  }, [sortedWorkflows.length, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage((previous) => Math.min(previous, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [days, adminWorkflows, pageSize]);
+
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedWorkflows = useMemo(() => {
+    if (sortedWorkflows.length === 0) {
+      return [] as XnatWorkflow[];
+    }
+
+    const startIndex = (safePage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return sortedWorkflows.slice(startIndex, endIndex);
+  }, [sortedWorkflows, safePage, pageSize]);
+
+  const paginationSummary = useMemo(() => {
+    if (sortedWorkflows.length === 0) {
+      return { start: 0, end: 0 };
+    }
+
+    const start = (safePage - 1) * pageSize + 1;
+    const end = Math.min(safePage * pageSize, sortedWorkflows.length);
+    return { start, end };
+  }, [safePage, pageSize, sortedWorkflows.length]);
 
   const activeWorkflows = useMemo(
     () => sortedWorkflows.filter((workflow) => isWorkflowActive(workflow)),
@@ -546,7 +585,7 @@ export function Processing() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {sortedWorkflows.map((workflow) => {
+                  {paginatedWorkflows.map((workflow) => {
                     const status = getWorkflowStatus(workflow);
                     const launchDate = getWorkflowLaunchDate(workflow);
                     const percent = getWorkflowPercent(workflow);
@@ -605,6 +644,61 @@ export function Processing() {
                   })}
                 </tbody>
               </table>
+              {sortedWorkflows.length > 0 && (
+                <div className="flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    Showing {paginationSummary.start.toLocaleString()}-
+                    {paginationSummary.end.toLocaleString()} of {sortedWorkflows.length.toLocaleString()} workflows
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
+                      Page Size
+                      <select
+                        className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value={pageSize}
+                        onChange={(event) => setPageSize(Number(event.target.value))}
+                      >
+                        {[25, 50, 100].map((size) => (
+                          <option key={size} value={size}>
+                            {size} per page
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                        disabled={safePage <= 1}
+                        className={clsx(
+                          'rounded-md border px-3 py-1 text-sm font-medium shadow-sm transition-colors',
+                          safePage <= 1
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                        )}
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs uppercase tracking-wide text-gray-500">
+                        Page {safePage.toLocaleString()} of {totalPages.toLocaleString()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                        disabled={safePage >= totalPages}
+                        className={clsx(
+                          'rounded-md border px-3 py-1 text-sm font-medium shadow-sm transition-colors',
+                          safePage >= totalPages
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                        )}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
