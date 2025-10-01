@@ -19,6 +19,30 @@ export interface XnatProject {
   last_modified?: string;
 }
 
+export interface XnatProjectSummary extends XnatProject {
+  project_access?: string;
+  project_invs?: string;
+  pi?: string;
+  URI?: string;
+  [key: string]: unknown;
+}
+
+export interface XnatProjectListOptions {
+  accessible?: boolean;
+  traditional?: boolean;
+  recent?: boolean;
+  owner?: boolean;
+  member?: boolean;
+  collaborator?: boolean;
+  limit?: number;
+}
+
+export interface XnatProjectSummaryResponse {
+  projects: XnatProjectSummary[];
+  totalRecords: number;
+  userId?: string;
+}
+
 export interface XnatSubject {
   id: string;
   label: string;
@@ -89,6 +113,17 @@ export interface XnatExperiment {
     method: string;
     notes: string;
   };
+}
+
+export interface XnatExperimentSummary extends XnatExperiment {
+  workflow_status?: string;
+  workflow_date?: string;
+  action_date?: string;
+  pipeline_name?: string;
+  type_desc?: string;
+  last_modified?: string;
+  insert_date?: string;
+  status?: string;
 }
 
 export interface XnatScan {
@@ -201,6 +236,12 @@ export interface XnatUserAuthDetail {
   lastSuccessfulLogin?: string | number;
   failedLoginAttempts?: number;
   [key: string]: unknown;
+}
+
+export interface XnatTotalCounts {
+  projects: number;
+  subjects: number;
+  experiments: number;
 }
 
 export interface XnatContainer {
@@ -693,11 +734,86 @@ export class XnatApiClient {
   }
 
   // Project methods
-  async getProjects(): Promise<XnatProject[]> {
-    const response = await this.client.get('/data/projects', {
-      params: { format: 'json' }
+  async getProjects(options: XnatProjectListOptions = {}): Promise<XnatProject[]> {
+    const summary = await this.getProjectsSummary(options);
+    return summary.projects;
+  }
+
+  async getProjectsSummary(options: XnatProjectListOptions = {}): Promise<XnatProjectSummaryResponse> {
+    const params: Record<string, string | number> = { format: 'json' };
+
+    const flagKeys: Array<keyof XnatProjectListOptions> = [
+      'accessible',
+      'traditional',
+      'recent',
+      'owner',
+      'member',
+      'collaborator',
+    ];
+
+    flagKeys.forEach((key) => {
+      if (options[key]) {
+        params[key] = 'true';
+      }
     });
-    return response.data.ResultSet.Result || [];
+
+    if (typeof options.limit === 'number') {
+      params.limit = options.limit;
+    }
+
+    const response = await this.client.get('/data/projects', { params });
+    const resultSet = response.data?.ResultSet ?? {};
+    const projects = Array.isArray(resultSet.Result) ? resultSet.Result : [];
+    const totalRecordsRaw = resultSet.totalRecords;
+    const totalRecords = typeof totalRecordsRaw === 'string'
+      ? parseInt(totalRecordsRaw, 10) || projects.length || 0
+      : typeof totalRecordsRaw === 'number'
+        ? totalRecordsRaw
+        : projects.length || 0;
+
+    const userId = resultSet.xdat_user_id !== undefined ? String(resultSet.xdat_user_id) : undefined;
+
+    return {
+      projects: projects as XnatProjectSummary[],
+      totalRecords,
+      userId,
+    };
+  }
+
+  async getTotalCounts(): Promise<XnatTotalCounts> {
+    try {
+      const response = await this.client.get('/xapi/totalCounts/reset');
+      return {
+        projects: Number(response.data?.['xnat:projectData'] ?? 0),
+        subjects: Number(response.data?.['xnat:subjectData'] ?? 0),
+        experiments: Number(response.data?.['xnat:imageSessionData'] ?? 0),
+      };
+    } catch (error) {
+      console.warn('Falling back to calculated counts', error);
+
+      const fetchTotal = async (path: string): Promise<number> => {
+        const res = await this.client.get(path, {
+          params: { format: 'json', columns: 'ID' },
+        });
+        const total = res.data?.ResultSet?.totalRecords;
+        if (typeof total === 'string') {
+          return parseInt(total, 10) || 0;
+        }
+        if (typeof total === 'number') {
+          return total;
+        }
+        const result = res.data?.ResultSet?.Result;
+        return Array.isArray(result) ? result.length : 0;
+      };
+
+      const [projects, subjects, experiments] = await Promise.all([
+        fetchTotal('/data/projects'),
+        fetchTotal('/data/subjects'),
+        fetchTotal('/data/experiments'),
+      ]);
+
+      return { projects, subjects, experiments };
+    }
   }
 
   async getProjectAccess(): Promise<XnatProjectAccess[]> {
@@ -796,6 +912,22 @@ export class XnatApiClient {
       params: { format: 'json' }
     });
     return response.data.ResultSet.Result || [];
+  }
+
+  async getRecentExperiments(limit = 25): Promise<XnatExperimentSummary[]> {
+    const params: Record<string, string | number> = {
+      format: 'json',
+      recent: 'true',
+    };
+
+    if (limit > 0) {
+      params.limit = limit;
+    }
+
+    const response = await this.client.get('/data/experiments', { params });
+    const resultSet = response.data?.ResultSet ?? {};
+    const experiments = Array.isArray(resultSet.Result) ? resultSet.Result as XnatExperimentSummary[] : [];
+    return limit > 0 ? experiments.slice(0, limit) : experiments;
   }
 
   async getExperiment(projectId: string, subjectId: string, experimentId: string): Promise<XnatExperiment> {

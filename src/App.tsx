@@ -4,6 +4,7 @@ import { XnatProvider, useXnat } from './contexts/XnatContext';
 import { Login } from './components/Login';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
+import { LegacyIndex } from './components/LegacyIndex';
 import { Projects } from './components/Projects';
 import { ProjectDetail } from './components/ProjectDetail';
 import { Subjects } from './components/Subjects';
@@ -41,6 +42,7 @@ function AppContent() {
     <Layout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/index" element={<LegacyIndex />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:project" element={<ProjectDetail />} />
         <Route path="/subjects" element={<Subjects />} />

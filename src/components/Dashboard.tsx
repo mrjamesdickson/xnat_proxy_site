@@ -1,461 +1,155 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useXnat } from '../contexts/XnatContext';
-import { 
-  Folder, 
-  Users, 
-  FileImage, 
-  Activity,
-  TrendingUp,
-  AlertCircle,
-  BarChart3,
-  PieChart,
-  Calendar,
-} from 'lucide-react';
 import { Link } from 'react-router-dom';
-import clsx from 'clsx';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  Area,
-  AreaChart
-} from 'recharts';
+import { useXnat } from '../contexts/XnatContext';
+import type { XnatProjectSummaryResponse, XnatTotalCounts } from '../services/xnat-api';
+import { Folder, Users, FileImage, ArrowRight, ExternalLink } from 'lucide-react';
 
-// Chart colors
-const COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#84CC16', '#F97316'];
-
-const getProjectIdentifier = (project: any): string =>
-  project?.id || project?.ID || project?.name || project?.Name || '';
-
-const getSubjectProject = (subject: any): string =>
-  subject?.project || subject?.PROJECT || subject?.project_id || subject?.PROJECT_ID || '';
-
-const getExperimentProject = (experiment: any): string =>
-  experiment?.project || experiment?.PROJECT || experiment?.project_id || experiment?.PROJECT_ID || '';
+const formatCount = (value?: number): string => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '0';
+  }
+  return value.toLocaleString();
+};
 
 export function Dashboard() {
-  const { client, currentUser } = useXnat();
+  const { client, currentUser, config } = useXnat();
+  const baseUrl = config?.baseURL ?? '';
 
-  const { data: projects, isLoading: projectsLoading } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => client?.getProjects() || [],
-    enabled: !!client,
+  const { data: counts, isLoading: countsLoading } = useQuery<XnatTotalCounts>({
+    queryKey: ['dashboard-counts', baseUrl],
+    queryFn: () => client.getTotalCounts(),
+    enabled: Boolean(client),
+    refetchOnWindowFocus: false,
   });
 
-  const { data: subjects, isLoading: subjectsLoading } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: () => client?.getSubjects() || [],
-    enabled: !!client,
+  const { data: projectSummary, isLoading: projectsLoading } = useQuery<XnatProjectSummaryResponse>({
+    queryKey: ['dashboard-projects', baseUrl],
+    queryFn: () => client.getProjectsSummary({ accessible: true, traditional: true, limit: 5 }),
+    enabled: Boolean(client),
+    refetchOnWindowFocus: false,
   });
 
-  const { data: experiments, isLoading: experimentsLoading } = useQuery({
-    queryKey: ['experiments'],
-    queryFn: () => client?.getExperiments() || [],
-    enabled: !!client,
-  });
+  const visibleProjects = useMemo(() => projectSummary?.projects?.slice(0, 5) ?? [], [projectSummary]);
 
-  // Process data for charts
-  const processChartData = () => {
-    if (!projects || !subjects || !experiments) return null;
-
-    // Project distribution data
-    const projectData = projects.map(project => {
-      const identifier = getProjectIdentifier(project);
-      const projectSubjects = subjects.filter((subject) => getSubjectProject(subject) === identifier);
-      const projectExperiments = experiments.filter((experiment) => getExperimentProject(experiment) === identifier);
-
-      return {
-        name: project.name || project.id || identifier || 'Unknown',
-        subjects: projectSubjects.length,
-        experiments: projectExperiments.length,
-        value: projectSubjects.length + projectExperiments.length
-      };
-    });
-
-    // Experiment types distribution
-    const experimentTypes = experiments.reduce((acc: any, exp: any) => {
-      const type = exp.xsiType || exp.modality || 'Unknown';
-      acc[type] = (acc[type] || 0) + 1;
-      return acc;
-    }, {});
-
-    const experimentTypesData = Object.entries(experimentTypes).map(([name, value]) => ({
-      name,
-      value: value as number
-    }));
-
-    // Timeline data (experiments by date)
-    const experimentsByDate = experiments.reduce((acc: any, exp: any) => {
-      const date = exp.date ? new Date(exp.date).toISOString().split('T')[0] : 'Unknown';
-      acc[date] = (acc[date] || 0) + 1;
-      return acc;
-    }, {});
-
-    const timelineData = Object.entries(experimentsByDate)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-30) // Last 30 days
-      .map(([date, count]) => ({
-        date: new Date(date).toLocaleDateString(),
-        experiments: count as number
-      }));
-
-    return {
-      projectData: projectData.slice(0, 10), // Top 10 projects
-      experimentTypesData,
-      timelineData
-    };
-  };
-
-  const chartData = processChartData();
-
-  const stats = [
-    {
-      name: 'Projects',
-      value: projects?.length || 0,
-      icon: Folder,
-      color: 'bg-blue-500',
-      href: '/projects',
-      loading: projectsLoading,
-      change: null,
-      changeType: 'neutral'
-    },
-    {
-      name: 'Subjects',
-      value: subjects?.length || 0,
-      icon: Users,
-      color: 'bg-green-500',
-      href: '/subjects',
-      loading: subjectsLoading,
-      change: null,
-      changeType: 'neutral'
-    },
-    {
-      name: 'Experiments',
-      value: experiments?.length || 0,
-      icon: FileImage,
-      color: 'bg-purple-500',
-      href: '/experiments',
-      loading: experimentsLoading,
-      change: null,
-      changeType: 'neutral'
-    },
-  ];
-
-  const isLoading = projectsLoading || subjectsLoading || experimentsLoading;
+  const userName =
+    currentUser?.firstname || currentUser?.firstName || currentUser?.login || currentUser?.username || 'User';
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="border-b border-gray-200 pb-5">
-        <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-          Welcome back, {currentUser?.firstname || 'User'}
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Here's a comprehensive overview of your XNAT instance with analytics and insights.
+      <header className="rounded-2xl bg-white px-6 py-8 shadow-sm ring-1 ring-slate-200/60">
+        <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Dashboard</p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Welcome back, {userName}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          Your XNAT proxy portal surfaces quick statistics and shortcuts so you can dive into projects, subjects, and
+          imaging sessions without leaving this interface.
         </p>
-      </div>
+      </header>
 
-      {/* Enhanced Stats Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Link
-            key={stat.name}
-            to={stat.href}
-            className="relative overflow-hidden rounded-lg bg-white px-4 py-5 shadow hover:shadow-md transition-shadow group"
-          >
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <div className={clsx('rounded-md p-3 group-hover:scale-110 transition-transform', stat.color)}>
-                  <stat.icon className="h-6 w-6 text-white" />
-                </div>
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="truncate text-sm font-medium text-gray-500">
-                    {stat.name}
-                  </dt>
-                  <dd className="flex items-baseline">
-                    {stat.loading ? (
-                      <div className="h-6 w-8 bg-gray-200 animate-pulse rounded" />
-                    ) : (
-                      <>
-                        <div className="text-2xl font-semibold text-gray-900">
-                          {typeof stat.value === 'string' ? stat.value : stat.value.toLocaleString()}
-                        </div>
-                        {stat.change && (
-                          <div className={clsx(
-                            'ml-2 text-sm font-medium',
-                            stat.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
-                          )}>
-                            {stat.change}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </dd>
-                </dl>
-              </div>
-            </div>
-            <div className="absolute right-4 top-4">
-              <TrendingUp className={clsx(
-                'h-4 w-4 transition-colors',
-                stat.changeType === 'positive' ? 'text-green-400' : 'text-gray-400'
-              )} />
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Charts and Analytics */}
-      <div className="space-y-8">
-        {/* Project Distribution Bar Chart */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                <BarChart3 className="h-5 w-5 mr-2 text-blue-600" />
-                Project Activity Distribution
-              </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Subjects and experiments by project
-              </p>
-            </div>
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Link
+          to="/projects"
+          className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-200 hover:shadow"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-500">Projects</span>
+            <Folder className="h-5 w-5 text-blue-500" />
           </div>
-          
-          {isLoading ? (
-            <div className="h-80 bg-gray-100 rounded animate-pulse flex items-center justify-center">
-              <div className="text-gray-400">Loading chart data...</div>
+          <div className="mt-4 text-3xl font-semibold text-slate-900">
+            {countsLoading && !counts ? '—' : formatCount(counts?.projects)}
+          </div>
+          <p className="mt-2 flex items-center text-sm text-blue-600">
+            Manage projects
+            <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-1" />
+          </p>
+        </Link>
+
+        <Link
+          to="/subjects"
+          className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-200 hover:shadow"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-500">Subjects</span>
+            <Users className="h-5 w-5 text-green-500" />
+          </div>
+          <div className="mt-4 text-3xl font-semibold text-slate-900">
+            {countsLoading && !counts ? '—' : formatCount(counts?.subjects)}
+          </div>
+          <p className="mt-2 flex items-center text-sm text-blue-600">
+            Review cohorts
+            <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-1" />
+          </p>
+        </Link>
+
+        <Link
+          to="/experiments"
+          className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-200 hover:shadow"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-500">Imaging Sessions</span>
+            <FileImage className="h-5 w-5 text-purple-500" />
+          </div>
+          <div className="mt-4 text-3xl font-semibold text-slate-900">
+            {countsLoading && !counts ? '—' : formatCount(counts?.experiments)}
+          </div>
+          <p className="mt-2 flex items-center text-sm text-blue-600">
+            Explore sessions
+            <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-1" />
+          </p>
+        </Link>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/60">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-slate-900">Recently accessed projects</h2>
+          <Link to="/projects" className="text-sm font-medium text-blue-600 hover:text-blue-500">
+            View all projects
+          </Link>
+        </div>
+        <p className="mt-2 text-sm text-slate-600">
+          Pulled from <span className="font-mono text-xs text-slate-500">/data/projects?accessible=true&amp;traditional=true</span>
+          .
+        </p>
+
+        <div className="mt-5 space-y-3">
+          {projectsLoading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={`project-skeleton-${index}`} className="h-12 animate-pulse rounded-xl bg-slate-100" />
+            ))
+          ) : visibleProjects.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
+              No projects were returned by the API.
             </div>
-          ) : chartData?.projectData && chartData.projectData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData.projectData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fontSize: 12 }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={60}
-                />
-                <YAxis />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                  }}
-                />
-                <Legend />
-                <Bar dataKey="subjects" fill="#3B82F6" name="Subjects" />
-                <Bar dataKey="experiments" fill="#10B981" name="Experiments" />
-              </BarChart>
-            </ResponsiveContainer>
           ) : (
-            <div className="h-80 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>No project data available</p>
-              </div>
-            </div>
+            visibleProjects.map((project) => {
+              const id = project.id || (project as Record<string, unknown>).ID?.toString() || project.name || '';
+              const description = (project.description || '').trim();
+              const remoteUri = typeof project.URI === 'string' ? project.URI : undefined;
+              const remoteHref = remoteUri && baseUrl ? `${baseUrl}${remoteUri}` : undefined;
+
+              return (
+                <div
+                  key={id}
+                  className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-4 transition hover:border-blue-200 hover:bg-blue-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <Link to={`/projects/${id}`} className="text-base font-semibold text-slate-900 hover:text-blue-600">
+                      {project.name || id}
+                    </Link>
+                    {remoteHref && (
+                      <a href={remoteHref} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-blue-500">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">ID: {id}</p>
+                  {description && <p className="text-sm text-slate-600 line-clamp-2">{description}</p>}
+                </div>
+              );
+            })
           )}
         </div>
-
-        {/* Pie Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Experiment Types Pie Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <PieChart className="h-5 w-5 mr-2 text-purple-600" />
-                  Experiment Types
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Distribution of experiment modalities
-                </p>
-              </div>
-            </div>
-            
-            {isLoading ? (
-              <div className="h-64 bg-gray-100 rounded animate-pulse flex items-center justify-center">
-                <div className="text-gray-400">Loading chart data...</div>
-              </div>
-            ) : chartData?.experimentTypesData && chartData.experimentTypesData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <RechartsPieChart>
-                  <Pie
-                    dataKey="value"
-                    data={chartData.experimentTypesData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
-                  >
-                    {chartData.experimentTypesData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </RechartsPieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-gray-500">
-                <div className="text-center">
-                  <PieChart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No experiment type data available</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Timeline Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Calendar className="h-5 w-5 mr-2 text-green-600" />
-                  Experiment Timeline
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Recent experiment activity
-                </p>
-              </div>
-            </div>
-            
-            {isLoading ? (
-              <div className="h-64 bg-gray-100 rounded animate-pulse flex items-center justify-center">
-                <div className="text-gray-400">Loading chart data...</div>
-              </div>
-            ) : chartData?.timelineData && chartData.timelineData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={chartData.timelineData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="date" 
-                    tick={{ fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                  />
-                  <YAxis />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                    }}
-                  />
-                  <Area type="monotone" dataKey="experiments" stroke="#10B981" fill="#10B981" fillOpacity={0.3} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-64 flex items-center justify-center text-gray-500">
-                <div className="text-center">
-                  <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No timeline data available</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Enhanced Quick Actions */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
-            <Activity className="h-5 w-5 mr-2 text-indigo-600" />
-            Quick Actions
-          </h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Link
-              to="/projects"
-              className="group relative rounded-lg border border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-            >
-              <div className="flex items-center">
-                <div className="p-2 bg-blue-500 rounded-lg mr-3 group-hover:bg-blue-600 transition-colors">
-                  <Folder className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">
-                    Browse Projects
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {projects?.length || 0} projects
-                  </div>
-                </div>
-              </div>
-            </Link>
-            
-            <Link
-              to="/upload"
-              className="group relative rounded-lg border border-gray-200 bg-gradient-to-r from-green-50 to-green-100 px-6 py-4 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-            >
-              <div className="flex items-center">
-                <div className="p-2 bg-green-500 rounded-lg mr-3 group-hover:bg-green-600 transition-colors">
-                  <TrendingUp className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">
-                    Upload Data
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Add new studies
-                  </div>
-                </div>
-              </div>
-            </Link>
-            
-            <Link
-              to="/search"
-              className="group relative rounded-lg border border-gray-200 bg-gradient-to-r from-purple-50 to-purple-100 px-6 py-4 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-            >
-              <div className="flex items-center">
-                <div className="p-2 bg-purple-500 rounded-lg mr-3 group-hover:bg-purple-600 transition-colors">
-                  <Activity className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">
-                    Search Data
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Find studies
-                  </div>
-                </div>
-              </div>
-            </Link>
-            
-            <Link
-              to="/settings"
-              className="group relative rounded-lg border border-gray-200 bg-gradient-to-r from-orange-50 to-orange-100 px-6 py-4 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105"
-            >
-              <div className="flex items-center">
-                <div className="p-2 bg-orange-500 rounded-lg mr-3 group-hover:bg-orange-600 transition-colors">
-                  <AlertCircle className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">
-                    Settings
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    Configure XNAT
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </div>
-        </div>
-      </div>
-
+      </section>
     </div>
   );
 }
