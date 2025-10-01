@@ -225,8 +225,9 @@ export function Processing() {
       const pageSize = 200;
       const combined: XnatWorkflow[] = [];
       let page = 1;
+      const maxPages = 100;
 
-      while (page <= 10) {
+      while (page <= maxPages) {
         const batch = await client.getWorkflows({
           days,
           page,
@@ -243,6 +244,10 @@ export function Processing() {
         }
 
         page += 1;
+      }
+
+      if (page > maxPages) {
+        console.warn('Processing workflows exceeded pagination guard. Showing first', maxPages * pageSize, 'items.');
       }
 
       return combined;
