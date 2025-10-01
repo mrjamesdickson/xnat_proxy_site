@@ -15,7 +15,58 @@
     @apply bg-gray-50 text-gray-900 antialiased;
   }
 
-  html.dark body {
-    @apply bg-slate-950 text-gray-100;
+html.dark body {
+  @apply bg-slate-950 text-gray-100;
+}
+
+@layer utilities {
+  .dark .bg-white {
+    @apply bg-slate-900;
   }
+
+  .dark .bg-white\/80 {
+    @apply bg-slate-900/80;
+  }
+
+  .dark .bg-gray-50 {
+    @apply bg-slate-950;
+  }
+
+  .dark .bg-gray-100 {
+    @apply bg-slate-900/60;
+  }
+
+  .dark .border-gray-200 {
+    @apply border-slate-800;
+  }
+
+  .dark .border-gray-300 {
+    @apply border-slate-700;
+  }
+
+  .dark .divide-gray-200 {
+    @apply divide-slate-800;
+  }
+
+  .dark .ring-gray-900\/5 {
+    @apply ring-slate-800/60;
+  }
+
+  .dark .text-gray-900,
+  .dark .text-gray-800 {
+    @apply text-gray-100;
+  }
+
+  .dark .text-gray-700 {
+    @apply text-gray-200;
+  }
+
+  .dark .text-gray-600 {
+    @apply text-gray-300;
+  }
+
+  .dark .text-gray-500 {
+    @apply text-gray-400;
+  }
+}
 }
