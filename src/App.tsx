@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
 import { XnatProvider, useXnat } from './contexts/XnatContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Login } from './components/Login';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -67,13 +68,15 @@ function AppContent() {
 
 function App() {
   return (
-    <QueryProvider>
-      <XnatProvider>
-        <Router>
-          <AppContent />
-        </Router>
-      </XnatProvider>
-    </QueryProvider>
+    <ThemeProvider>
+      <QueryProvider>
+        <XnatProvider>
+          <Router>
+            <AppContent />
+          </Router>
+        </XnatProvider>
+      </QueryProvider>
+    </ThemeProvider>
   );
 }
 
