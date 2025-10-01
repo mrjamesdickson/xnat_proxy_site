@@ -11,6 +11,7 @@ import {
   Upload,
   Search,
   Activity,
+  TrendingUp,
   ExternalLink,
   ShieldCheck,
   BookOpen,
@@ -32,6 +33,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Legacy Index', href: '/index', icon: Globe },
+  { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Projects', href: '/projects', icon: Folder },
   { name: 'Subjects', href: '/subjects', icon: Users },
   { name: 'Experiments', href: '/experiments', icon: FileImage },

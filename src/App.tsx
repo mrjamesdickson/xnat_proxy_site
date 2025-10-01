@@ -19,6 +19,7 @@ import { Search } from './components/Search';
 import { Settings } from './components/Settings';
 import { AdminUsers } from './components/AdminUsers';
 import { ApiExplorer } from './components/ApiExplorer';
+import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -43,6 +44,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/index" element={<LegacyIndex />} />
+        <Route path="/analytics" element={<AnalyticsDashboard />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:project" element={<ProjectDetail />} />
         <Route path="/subjects" element={<Subjects />} />
