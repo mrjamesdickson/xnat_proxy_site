@@ -120,14 +120,6 @@ export function TopNavigation() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center space-x-6">
-            <Link to="/" className="flex items-center space-x-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white font-semibold">
-                X
-              </div>
-              <span className="text-lg font-semibold text-gray-900 hidden sm:block">
-                XNAT Portal
-              </span>
-            </Link>
 
             <nav className="hidden lg:flex items-center space-x-4 text-sm text-gray-600">
               <div className="relative">

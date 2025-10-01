@@ -216,16 +216,35 @@ export function Processing() {
   const workflowsQuery = useQuery({
     queryKey: ['processing-workflows', { days, adminWorkflows }],
     enabled: !!client,
-    queryFn: () =>
-      client?.getWorkflows({
-        days,
-        page: 1,
-        size: 50,
-        sortable: true,
-        admin_workflows: adminWorkflows,
-        data_type: 'xdat:user',
-      }) || [],
     refetchInterval: 15000,
+    queryFn: async () => {
+      if (!client) return [] as XnatWorkflow[];
+
+      const pageSize = 200;
+      const combined: XnatWorkflow[] = [];
+      let page = 1;
+
+      while (page <= 10) {
+        const batch = await client.getWorkflows({
+          days,
+          page,
+          size: pageSize,
+          sortable: true,
+          admin_workflows: adminWorkflows,
+          data_type: 'xdat:user',
+        });
+
+        combined.push(...batch);
+
+        if (batch.length < pageSize) {
+          break;
+        }
+
+        page += 1;
+      }
+
+      return combined;
+    },
   });
 
   const containersQuery = useQuery({
