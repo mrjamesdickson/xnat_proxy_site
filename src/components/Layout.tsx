@@ -21,7 +21,8 @@ import {
   Star,
   Sun,
   Moon,
-  FolderInput
+  FolderInput,
+  FileArchive
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -43,7 +44,14 @@ const navigation = [
   { name: 'Experiments', href: '/experiments', icon: FileImage },
   { name: 'Prearchive', href: '/prearchive', icon: FolderInput },
   { name: 'Processing', href: '/processing', icon: Activity },
-  { name: 'Upload', href: '/upload', icon: Upload },
+  {
+    name: 'Upload',
+    icon: Upload,
+    submenu: [
+      { name: 'DICOM Upload', href: '/upload', icon: Upload },
+      { name: 'Compressed Uploader', href: '/upload/compressed', icon: FileArchive }
+    ]
+  },
   { name: 'Search', href: '/search', icon: Search },
   { name: 'API Explorer', href: '/api', icon: BookOpen },
   { name: 'Admin', href: '/admin/users', icon: ShieldCheck },
@@ -169,6 +177,46 @@ export function Layout({ children }: LayoutProps) {
                 </p>
                 <div className="mt-3 space-y-2">
                   {navigation.map((item) => {
+                    // Check if item has submenu
+                    if ('submenu' in item && item.submenu) {
+                      const isAnySubmenuActive = item.submenu.some(sub => location.pathname === sub.href);
+                      return (
+                        <details key={item.name} className="group">
+                          <summary className={clsx(
+                            'flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium transition-colors list-none',
+                            isAnySubmenuActive
+                              ? 'border-r-2 border-blue-600 bg-blue-100 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-200'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                          )}>
+                            <item.icon className="mr-3 h-5 w-5" />
+                            <span className="flex-1">{item.name}</span>
+                            <ChevronRight className="h-4 w-4 transition group-open:rotate-90" />
+                          </summary>
+                          <div className="mt-1 ml-8 space-y-1">
+                            {item.submenu.map((subItem) => {
+                              const isActive = location.pathname === subItem.href;
+                              return (
+                                <Link
+                                  key={subItem.name}
+                                  to={subItem.href}
+                                  className={clsx(
+                                    'flex items-center rounded-md px-3 py-2 text-sm transition-colors',
+                                    isActive
+                                      ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-950/20 dark:text-blue-200'
+                                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                                  )}
+                                >
+                                  <subItem.icon className="mr-2 h-4 w-4" />
+                                  {subItem.name}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      );
+                    }
+
+                    // Regular menu item without submenu
                     const isActive = location.pathname === item.href;
                     return (
                       <Link
@@ -539,6 +587,46 @@ export function Layout({ children }: LayoutProps) {
           <div className="md:hidden border-b border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             <nav className="px-4 py-2 space-y-1">
               {navigation.map((item) => {
+                // Check if item has submenu
+                if ('submenu' in item && item.submenu) {
+                  const isAnySubmenuActive = item.submenu.some(sub => location.pathname === sub.href);
+                  return (
+                    <details key={item.name} className="group">
+                      <summary className={clsx(
+                        'flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium transition-colors list-none',
+                        isAnySubmenuActive
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                      )}>
+                        <item.icon className="mr-3 h-4 w-4" />
+                        <span className="flex-1">{item.name}</span>
+                        <ChevronRight className="h-4 w-4 transition group-open:rotate-90" />
+                      </summary>
+                      <div className="mt-1 ml-7 space-y-1">
+                        {item.submenu.map((subItem) => {
+                          const isActive = location.pathname === subItem.href;
+                          return (
+                            <Link
+                              key={subItem.name}
+                              to={subItem.href}
+                              className={clsx(
+                                'flex items-center rounded-md px-3 py-2 text-sm transition-colors',
+                                isActive
+                                  ? 'bg-blue-50 text-blue-700 font-medium dark:bg-blue-950/20 dark:text-blue-200'
+                                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                              )}
+                            >
+                              <subItem.icon className="mr-2 h-4 w-4" />
+                              {subItem.name}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  );
+                }
+
+                // Regular menu item without submenu
                 const isActive = location.pathname === item.href;
                 return (
                   <Link

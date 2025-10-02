@@ -1755,6 +1755,194 @@ export class XnatApiClient {
     }
   }
 
+  // Upload file to cache
+  async uploadFileToCache(
+    path: string,
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<boolean> {
+    try {
+      console.log('Uploading file to cache:', path);
+      console.log('File details:', { name: file.name, size: file.size, type: file.type });
+
+      // Use FormData with the file field name "image_archive" to match XNAT expectations
+      const formData = new FormData();
+      formData.append('image_archive', file);
+
+      const response = await this.client.put('/data' + path, formData, {
+        // Don't set Content-Type - let axios set it with the boundary
+        timeout: 300000, // 5 minutes for large file uploads
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && onProgress) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            onProgress(percent);
+          }
+        }
+      });
+
+      console.log('Upload response:', response.status, response.statusText);
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('Error uploading file to cache:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      throw error;
+    }
+  }
+
+  async importFromCache(options: {
+    src: string;
+    project: string;
+    importHandler: string;
+    ignoreUnparsable: boolean;
+    autoArchive: boolean;
+    quarantine: boolean;
+    httpSessionListener: string;
+  }): Promise<boolean> {
+    try {
+      const formData = new FormData();
+
+      // Add parameters in the same order as XNAT
+      formData.append('threshhold', '51516279'); // Default threshold value
+      formData.append('project', options.project);
+      formData.append('import-handler', options.importHandler);
+
+      // prearchive_code: 0 = prearchive, 1 = archive, 2 = archive with quarantine
+      const prearchiveCode = options.autoArchive ? (options.quarantine ? '2' : '1') : '0';
+      formData.append('prearchive_code', prearchiveCode);
+
+      formData.append('auto-archive', options.autoArchive.toString());
+      formData.append('quarantine', options.quarantine.toString());
+      formData.append('action', 'commit');
+      formData.append('src', options.src);
+      formData.append('http-session-listener', options.httpSessionListener);
+      formData.append('Ignore-Unparsable', options.ignoreUnparsable.toString());
+
+      // Get CSRF token from cookie
+      const csrfToken = this.getCsrfToken();
+      if (csrfToken) {
+        formData.append('XNAT_CSRF', csrfToken);
+      }
+
+      console.log('Importing from cache with params:', {
+        project: options.project,
+        src: options.src,
+        importHandler: options.importHandler,
+        prearchiveCode,
+        csrfToken: csrfToken ? 'present' : 'missing'
+      });
+
+      const response = await this.client.post('/data/services/import', formData, {
+        // Don't set Content-Type - let axios set it with the boundary
+        timeout: 300000, // 5 minutes for import processing
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        // Also add CSRF to query params as XNAT expects it there too
+        params: csrfToken ? { XNAT_CSRF: csrfToken } : undefined
+      });
+
+      console.log('Import response:', response.status, response.statusText);
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('Error importing from cache:', error);
+      console.error('Import error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      throw error;
+    }
+  }
+
+  private getCsrfToken(): string | null {
+    // Try to get CSRF token from cookie
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'XNAT_CSRF') {
+        return decodeURIComponent(value);
+      }
+    }
+    return null;
+  }
+
+  async importCompressedArchiveWithFile(options: {
+    file: File;
+    project: string;
+    dest: string;
+    importHandler: string;
+    ignoreUnparsable: boolean;
+    onProgress?: (percent: number) => void;
+  }): Promise<boolean> {
+    try {
+      console.log('Importing file with inbody=true:', {
+        fileName: options.file.name,
+        fileSize: options.file.size,
+        project: options.project,
+        dest: options.dest,
+        importHandler: options.importHandler
+      });
+
+      // Get CSRF token
+      const csrfToken = this.getCsrfToken();
+
+      // Build query parameters - use exact parameter names from XNAT API
+      const params: Record<string, string> = {
+        inbody: 'true',
+        project: options.project,  // Use 'project' not 'PROJECT_ID'
+        import_handler: options.importHandler,  // Use 'import_handler' with underscore
+      };
+
+      // Only add dest if it's not prearchive (prearchive is the default)
+      if (options.dest === '/archive') {
+        params.dest = '/archive';
+      }
+
+      if (options.ignoreUnparsable) {
+        params['Ignore-Unparsable'] = 'true';
+      }
+
+      if (csrfToken) {
+        params.XNAT_CSRF = csrfToken;
+      }
+
+      console.log('Request params:', params);
+
+      // Send file directly as request body
+      const response = await this.client.post('/data/services/import', options.file, {
+        headers: {
+          'Content-Type': options.file.type || 'application/octet-stream',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        params,
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && options.onProgress) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            options.onProgress(percent);
+          }
+        }
+      });
+
+      console.log('Import response:', response.status, response.statusText);
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('Error importing file with inbody:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      throw error;
+    }
+  }
+
   // Utility methods
   getConfig(): XnatConfig {
     return { ...this.config };

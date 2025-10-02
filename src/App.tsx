@@ -22,6 +22,7 @@ import { AdminUsers } from './components/AdminUsers';
 import { ApiExplorer } from './components/ApiExplorer';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Prearchive } from './components/Prearchive';
+import { CompressedUploader } from './components/CompressedUploader';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -59,6 +60,7 @@ function AppContent() {
         <Route path="/prearchive" element={<Prearchive />} />
         <Route path="/processing" element={<Processing />} />
         <Route path="/upload" element={<Upload />} />
+        <Route path="/upload/compressed" element={<CompressedUploader />} />
         <Route path="/search" element={<Search />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/admin/users" element={<AdminUsers />} />
