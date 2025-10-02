@@ -385,6 +385,44 @@ export interface OpenApiSpec {
   [key: string]: unknown;
 }
 
+export interface XnatPrearchiveSession {
+  project: string;
+  timestamp: string;
+  subject: string;
+  name: string;
+  folderName: string;
+  url: string;
+  status: 'READY' | 'BUILDING' | 'RECEIVING' | 'CONFLICT' | 'ERROR' | 'QUEUED_BUILDING' | 'DELETING';
+  uploaded: string;
+  scan_date: string;
+  scan_time: string;
+  lastmod: string;
+  tag: string;
+  autoarchive?: string;
+  prevent_auto_commit?: string | boolean;
+  prevent_anon?: string | boolean;
+  PROTOCOL?: string;
+  VISIT?: string;
+  SOURCE?: string;
+  TIMEZONE?: string;
+  scan_count?: number;
+  file_size?: number;
+}
+
+export interface XnatPrearchiveScan {
+  ID: string;
+  xsiType: string;
+  series_description?: string;
+}
+
+export interface XnatPrearchiveAction {
+  action: 'archive' | 'delete' | 'rebuild' | 'move';
+  project?: string;
+  subject?: string;
+  session?: string;
+  overwrite?: 'none' | 'append' | 'delete';
+}
+
 const FALLBACK_OPENAPI_PATH = '/xnat-api-docs.json';
 
 export class XnatApiClient {
@@ -1522,6 +1560,201 @@ export class XnatApiClient {
     throw lastError ?? new Error('Unable to load OpenAPI specification.');
   }
 
+  // Prearchive methods
+  async getPrearchiveSessions(projectId?: string): Promise<XnatPrearchiveSession[]> {
+    try {
+      const url = projectId
+        ? `/data/prearchive/projects/${projectId}`
+        : '/data/prearchive/projects';
+
+      const response = await this.client.get(url, {
+        params: { format: 'json' }
+      });
+
+      const results = response.data?.ResultSet?.Result || [];
+      return Array.isArray(results) ? results : [];
+    } catch (error) {
+      console.error('Error fetching prearchive sessions:', error);
+      return [];
+    }
+  }
+
+  async getPrearchiveSession(
+    project: string,
+    timestamp: string,
+    subject: string
+  ): Promise<XnatPrearchiveSession | null> {
+    try {
+      const response = await this.client.get(
+        `/data/prearchive/projects/${project}/${timestamp}/${subject}`,
+        { params: { format: 'json' } }
+      );
+
+      const results = response.data?.ResultSet?.Result || [];
+      return results.length > 0 ? results[0] : null;
+    } catch (error) {
+      console.error('Error fetching prearchive session:', error);
+      return null;
+    }
+  }
+
+  async archivePrearchiveSession(
+    project: string,
+    timestamp: string,
+    subject: string,
+    options?: {
+      overwrite?: 'none' | 'append' | 'delete';
+      newProject?: string;
+      newSubject?: string;
+      newSession?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      const src = `/prearchive/projects/${project}/${timestamp}/${subject}`;
+
+      // Build URL-encoded form data
+      const params = new URLSearchParams();
+      params.append('src', src);
+
+      // Add optional parameters if provided
+      if (options?.newProject) {
+        params.append('project', options.newProject);
+      }
+      if (options?.newSubject) {
+        params.append('subject', options.newSubject);
+      }
+      if (options?.newSession) {
+        params.append('session', options.newSession);
+      }
+      if (options?.overwrite) {
+        params.append('overwrite', options.overwrite);
+      }
+
+      console.log('Archiving prearchive session:', src, options);
+      console.log('Archive params:', params.toString());
+
+      const response = await this.client.post('/REST/services/archive', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        params: {
+          format: 'csv'
+        }
+      });
+
+      console.log('Archive response:', response.status, response.data);
+      return true;
+    } catch (error) {
+      console.error('Error archiving prearchive session:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        console.error('Response data:', (error as any).response?.data);
+        console.error('Response status:', (error as any).response?.status);
+      }
+      throw error;
+    }
+  }
+
+  async deletePrearchiveSession(
+    project: string,
+    timestamp: string,
+    subject: string
+  ): Promise<boolean> {
+    try {
+      await this.client.delete(
+        `/data/prearchive/projects/${project}/${timestamp}/${subject}`
+      );
+      return true;
+    } catch (error) {
+      console.error('Error deleting prearchive session:', error);
+      return false;
+    }
+  }
+
+  async rebuildPrearchiveSession(
+    project: string,
+    timestamp: string,
+    subject: string
+  ): Promise<boolean> {
+    try {
+      const src = `/prearchive/projects/${project}/${timestamp}/${subject}`;
+
+      // Build URL-encoded form data
+      const params = new URLSearchParams();
+      params.append('src', src);
+
+      console.log('Rebuilding prearchive session:', src);
+
+      const response = await this.client.post('/REST/services/prearchive/rebuild', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('Rebuild response:', response.status, response.data);
+      return true;
+    } catch (error) {
+      console.error('Error rebuilding prearchive session:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        console.error('Response data:', (error as any).response?.data);
+        console.error('Response status:', (error as any).response?.status);
+      }
+      throw error;
+    }
+  }
+
+  async movePrearchiveSession(
+    project: string,
+    timestamp: string,
+    subject: string,
+    newProject: string
+  ): Promise<boolean> {
+    try {
+      const src = `/prearchive/projects/${project}/${timestamp}/${subject}`;
+
+      // Build URL-encoded form data
+      const params = new URLSearchParams();
+      params.append('src', src);
+      params.append('newProject', newProject);
+
+      console.log('Moving prearchive session:', src, 'to project:', newProject);
+
+      const response = await this.client.post('/REST/services/prearchive/move', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      });
+
+      console.log('Move response:', response.status, response.data);
+      return true;
+    } catch (error) {
+      console.error('Error moving prearchive session:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        console.error('Response data:', (error as any).response?.data);
+        console.error('Response status:', (error as any).response?.status);
+      }
+      throw error;
+    }
+  }
+
+  async getPrearchiveScans(
+    project: string,
+    timestamp: string,
+    subject: string
+  ): Promise<XnatPrearchiveScan[]> {
+    try {
+      const response = await this.client.get(
+        `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans`,
+        { params: { format: 'json' } }
+      );
+
+      const results = response.data?.ResultSet?.Result || [];
+      return Array.isArray(results) ? results : [];
+    } catch (error) {
+      console.error('Error fetching prearchive scans:', error);
+      return [];
+    }
+  }
+
   // Utility methods
   getConfig(): XnatConfig {
     return { ...this.config };
@@ -1529,16 +1762,16 @@ export class XnatApiClient {
 
   updateConfig(newConfig: Partial<XnatConfig>): void {
     this.config = { ...this.config, ...newConfig };
-    
+
     if (newConfig.baseURL) {
       this.client.defaults.baseURL = newConfig.baseURL;
     }
-    
+
     // Don't set Cookie header manually - browser handles this automatically
     // if (newConfig.jsessionid) {
     //   this.client.defaults.headers.common['Cookie'] = `JSESSIONID=${newConfig.jsessionid}`;
     // }
-    
+
     if (newConfig.username && newConfig.password) {
       this.client.defaults.auth = {
         username: newConfig.username,
