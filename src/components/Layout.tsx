@@ -20,7 +20,8 @@ import {
   ChevronRight,
   Star,
   Sun,
-  Moon
+  Moon,
+  FolderInput
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ const navigation = [
   { name: 'Projects', href: '/projects', icon: Folder },
   { name: 'Subjects', href: '/subjects', icon: Users },
   { name: 'Experiments', href: '/experiments', icon: FileImage },
+  { name: 'Prearchive', href: '/prearchive', icon: FolderInput },
   { name: 'Processing', href: '/processing', icon: Activity },
   { name: 'Upload', href: '/upload', icon: Upload },
   { name: 'Search', href: '/search', icon: Search },

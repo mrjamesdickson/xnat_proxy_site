@@ -21,6 +21,7 @@ import { Settings } from './components/Settings';
 import { AdminUsers } from './components/AdminUsers';
 import { ApiExplorer } from './components/ApiExplorer';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { Prearchive } from './components/Prearchive';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -55,6 +56,7 @@ function AppContent() {
         <Route path="/experiments/:project/:subject/:experiment/scans" element={<Scans />} />
         <Route path="/experiments/:project/:subject/:experiment/viewer" element={<OhifViewer />} />
         <Route path="/experiments/:project/:subject/:experiment" element={<ExperimentDetail />} />
+        <Route path="/prearchive" element={<Prearchive />} />
         <Route path="/processing" element={<Processing />} />
         <Route path="/upload" element={<Upload />} />
         <Route path="/search" element={<Search />} />
