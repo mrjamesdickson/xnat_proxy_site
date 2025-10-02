@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { useXnat } from '../contexts/XnatContext';
 import { Upload, Loader, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
@@ -24,6 +25,8 @@ export function CompressedUploader() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
 
   // Fetch available projects
   const { data: projects = [] } = useQuery({
@@ -63,6 +66,9 @@ export function CompressedUploader() {
     if (dicomFiles.length > 0 && dicomFiles.length === fileArray.length) {
       // All files are DICOM - zip them up
       try {
+        setIsProcessing(true);
+        setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
+
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
@@ -81,6 +87,7 @@ export function CompressedUploader() {
         }
 
         // Generate the zip file
+        setProcessingMessage('Creating zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -88,8 +95,12 @@ export function CompressedUploader() {
         });
         const zipFile = new File([zipBlob], `dicom_upload_${Date.now()}.zip`, { type: 'application/zip' });
         setSelectedFile(zipFile);
+        setIsProcessing(false);
+        setProcessingMessage('');
       } catch (error) {
         console.error('Error creating zip:', error);
+        setIsProcessing(false);
+        setProcessingMessage('');
         alert(`Failed to create zip file from DICOM files: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else if (fileArray.length === 1) {
@@ -102,10 +113,15 @@ export function CompressedUploader() {
       } else if (fileName.endsWith('.dcm')) {
         // Single DICOM file - zip it
         try {
+          setIsProcessing(true);
+          setProcessingMessage('Processing DICOM file...');
+
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
           const arrayBuffer = await file.arrayBuffer();
           zip.file(file.name, arrayBuffer);
+
+          setProcessingMessage('Creating zip file...');
           const zipBlob = await zip.generateAsync({
             type: 'blob',
             compression: 'DEFLATE',
@@ -113,8 +129,12 @@ export function CompressedUploader() {
           });
           const zipFile = new File([zipBlob], `dicom_upload_${Date.now()}.zip`, { type: 'application/zip' });
           setSelectedFile(zipFile);
+          setIsProcessing(false);
+          setProcessingMessage('');
         } catch (error) {
           console.error('Error creating zip:', error);
+          setIsProcessing(false);
+          setProcessingMessage('');
           alert(`Failed to create zip file from DICOM file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       } else {
@@ -173,6 +193,9 @@ export function CompressedUploader() {
     e.stopPropagation();
     setIsDragging(false);
 
+    setIsProcessing(true);
+    setProcessingMessage('Reading files...');
+
     // Try to get items first (supports folders)
     const items = e.dataTransfer.items;
     let allFiles: File[] = [];
@@ -209,6 +232,8 @@ export function CompressedUploader() {
     }
 
     if (allFiles.length === 0) {
+      setIsProcessing(false);
+      setProcessingMessage('');
       alert('No files detected. In Safari, please use the file browser instead of drag-and-drop for folders.');
       return;
     }
@@ -219,6 +244,8 @@ export function CompressedUploader() {
     if (dicomFiles.length > 0 && dicomFiles.length === allFiles.length) {
       // All files are DICOM - zip them up
       try {
+        setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
+
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
@@ -237,6 +264,7 @@ export function CompressedUploader() {
         }
 
         // Generate the zip file
+        setProcessingMessage('Creating zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -244,8 +272,12 @@ export function CompressedUploader() {
         });
         const zipFile = new File([zipBlob], `dicom_upload_${Date.now()}.zip`, { type: 'application/zip' });
         setSelectedFile(zipFile);
+        setIsProcessing(false);
+        setProcessingMessage('');
       } catch (error) {
         console.error('Error creating zip:', error);
+        setIsProcessing(false);
+        setProcessingMessage('');
         alert(`Failed to create zip file from DICOM files: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else if (allFiles.length === 1) {
@@ -254,13 +286,19 @@ export function CompressedUploader() {
       const fileName = file.name.toLowerCase();
       if (fileName.endsWith('.gz') || fileName.endsWith('.tgz') || fileName.endsWith('.zip')) {
         setSelectedFile(file);
+        setIsProcessing(false);
+        setProcessingMessage('');
       } else if (fileName.endsWith('.dcm')) {
         // Single DICOM file - zip it
         try {
+          setProcessingMessage('Processing DICOM file...');
+
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
           const arrayBuffer = await file.arrayBuffer();
           zip.file(file.name, arrayBuffer);
+
+          setProcessingMessage('Creating zip file...');
           const zipBlob = await zip.generateAsync({
             type: 'blob',
             compression: 'DEFLATE',
@@ -268,16 +306,24 @@ export function CompressedUploader() {
           });
           const zipFile = new File([zipBlob], `dicom_upload_${Date.now()}.zip`, { type: 'application/zip' });
           setSelectedFile(zipFile);
+          setIsProcessing(false);
+          setProcessingMessage('');
         } catch (error) {
           console.error('Error creating zip:', error);
+          setIsProcessing(false);
+          setProcessingMessage('');
           alert('Failed to create zip file from DICOM file');
         }
       } else {
+        setIsProcessing(false);
+        setProcessingMessage('');
         alert('Please drop a valid archive file (.zip, .tar.gz, or .tgz) or DICOM files (.dcm)');
       }
     } else if (dicomFiles.length > 0) {
       // Mixed files with some DICOM - zip only the DICOM files
       try {
+        setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
+
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
@@ -292,6 +338,7 @@ export function CompressedUploader() {
           }
         }
 
+        setProcessingMessage('Creating zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -299,11 +346,17 @@ export function CompressedUploader() {
         });
         const zipFile = new File([zipBlob], `dicom_upload_${Date.now()}.zip`, { type: 'application/zip' });
         setSelectedFile(zipFile);
+        setIsProcessing(false);
+        setProcessingMessage('');
       } catch (error) {
         console.error('Error creating zip:', error);
+        setIsProcessing(false);
+        setProcessingMessage('');
         alert(`Failed to create zip file from DICOM files: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
+      setIsProcessing(false);
+      setProcessingMessage('');
       alert('Please drop either a single archive file or DICOM files (.dcm)');
     }
   };
@@ -365,7 +418,7 @@ export function CompressedUploader() {
         message: `Upload successful! Data sent to ${destination}.`
       });
 
-      // Reset form after success
+      // Reset form after success - wait longer to give user time to click link
       setTimeout(() => {
         setUploadProgress(null);
         setSelectedFile(null);
@@ -373,7 +426,7 @@ export function CompressedUploader() {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-      }, 3000);
+      }, 60000); // 1 minute
 
     } catch (error) {
       console.error('Upload error:', error);
@@ -565,6 +618,19 @@ export function CompressedUploader() {
         </form>
       </div>
 
+      {/* Processing Indicator */}
+      {isProcessing && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center gap-3">
+            <Loader className="w-6 h-6 text-blue-600 animate-spin" />
+            <div className="flex-1">
+              <p className="font-medium text-blue-700">{processingMessage}</p>
+              <p className="text-sm text-gray-600 mt-1">Please wait while we prepare your files...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Progress Display */}
       {uploadProgress && (
         <div className="bg-white rounded-lg shadow p-6">
@@ -623,13 +689,18 @@ export function CompressedUploader() {
 
             {/* Success Message */}
             {uploadProgress.stage === 'complete' && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <p className="text-sm text-green-800">
-                  Your data has been uploaded successfully.
-                  {destination === 'prearchive' && (
-                    <> You can review it in the <a href="/prearchive" className="font-medium underline">prearchive</a>.</>
-                  )}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-sm text-green-800 mb-3">
+                  Your data has been uploaded successfully to the {destination}.
                 </p>
+                {destination === 'prearchive' && (
+                  <Link
+                    to="/prearchive"
+                    className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    View Prearchive
+                  </Link>
+                )}
               </div>
             )}
           </div>
