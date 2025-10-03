@@ -1755,6 +1755,43 @@ export class XnatApiClient {
     }
   }
 
+  async getPrearchiveScanFiles(
+    project: string,
+    timestamp: string,
+    subject: string,
+    scanId: string
+  ): Promise<Array<{ name: string; size: number }>> {
+    try {
+      const response = await this.client.get(
+        `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}/resources/DICOM/files`,
+        { params: { format: 'json' } }
+      );
+
+      const results = response.data?.ResultSet?.Result || [];
+      return Array.isArray(results) ? results : [];
+    } catch (error) {
+      console.error('Error fetching prearchive scan files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch a DICOM file from prearchive as an ArrayBuffer
+   */
+  async getPrearchiveDicomFile(
+    project: string,
+    timestamp: string,
+    subject: string,
+    scanId: string,
+    fileName: string
+  ): Promise<ArrayBuffer> {
+    const response = await this.client.get(
+      `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}/resources/DICOM/files/${encodeURIComponent(fileName)}`,
+      { responseType: 'arraybuffer' }
+    );
+    return response.data;
+  }
+
   // Upload file to cache
   async uploadFileToCache(
     path: string,
@@ -1860,6 +1897,28 @@ export class XnatApiClient {
     }
   }
 
+  /**
+   * Delete a file or resource from the user cache
+   */
+  async deleteCacheResource(path: string): Promise<boolean> {
+    try {
+      console.log('Deleting cache resource:', path);
+      const response = await this.client.delete('/data' + path);
+      console.log('Delete response:', response.status, response.statusText);
+      return response.status >= 200 && response.status < 300;
+    } catch (error: any) {
+      console.error('Error deleting cache resource:', error);
+      console.error('Delete error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      // Don't throw - deletion failure shouldn't break the flow
+      return false;
+    }
+  }
+
   private getCsrfToken(): string | null {
     // Try to get CSRF token from cookie
     const cookies = document.cookie.split(';');
@@ -1941,6 +2000,86 @@ export class XnatApiClient {
       });
       throw error;
     }
+  }
+
+  // Anonymization script methods
+  async getProjectAnonymizationScript(projectId: string): Promise<string | null> {
+    try {
+      const response = await this.client.get(`/xapi/anonymize/projects/${projectId}`, {
+        responseType: 'text',
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
+      return response.data || null;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 204) {
+        // No project-specific script
+        return null;
+      }
+      console.error('Error fetching project anonymization script:', error);
+      return null;
+    }
+  }
+
+  async isProjectAnonymizationEnabled(projectId: string): Promise<boolean> {
+    try {
+      const response = await this.client.get(`/xapi/anonymize/projects/${projectId}/enabled`);
+      return response.data === true || response.data === 'true';
+    } catch (error) {
+      console.error('Error checking if project anonymization is enabled:', error);
+      return false;
+    }
+  }
+
+  async getSiteAnonymizationScript(): Promise<string | null> {
+    try {
+      const response = await this.client.get('/xapi/anonymize/site', {
+        responseType: 'text',
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching site anonymization script:', error);
+      return null;
+    }
+  }
+
+  async getDefaultAnonymizationScript(): Promise<string | null> {
+    try {
+      const response = await this.client.get('/xapi/anonymize/default', {
+        responseType: 'text',
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching default anonymization script:', error);
+      return null;
+    }
+  }
+
+  async getAnonymizationScriptForProject(projectId: string): Promise<string | null> {
+    // Try project-specific first
+    const projectEnabled = await this.isProjectAnonymizationEnabled(projectId);
+    if (projectEnabled) {
+      const projectScript = await this.getProjectAnonymizationScript(projectId);
+      if (projectScript) {
+        return projectScript;
+      }
+    }
+
+    // Fall back to site-wide
+    const siteScript = await this.getSiteAnonymizationScript();
+    if (siteScript) {
+      return siteScript;
+    }
+
+    // Fall back to default
+    return await this.getDefaultAnonymizationScript();
   }
 
   // Utility methods
