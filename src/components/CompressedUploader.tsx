@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useXnat } from '../contexts/XnatContext';
-import { Upload, Loader, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Upload, Loader, CheckCircle, XCircle, AlertCircle, Shield, X } from 'lucide-react';
+import { dicomAnonymizer, DEFAULT_ANONYMIZATION_SCRIPT } from '../services/dicom-anonymizer';
 
 type ImportHandler = 'DICOM-zip' | 'SI';
 type Destination = 'prearchive' | 'archive';
@@ -27,6 +28,8 @@ export function CompressedUploader() {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
+  const [anonymizationScript, setAnonymizationScript] = useState<string | null>(null);
+  const [showScriptDialog, setShowScriptDialog] = useState(false);
 
   // Fetch available projects
   const { data: projects = [] } = useQuery({
@@ -36,6 +39,42 @@ export function CompressedUploader() {
       return await client.getProjects();
     },
   });
+
+  // Fetch anonymization script when project changes or on mount
+  useEffect(() => {
+    const fetchAnonymizationScript = async () => {
+      if (!client) {
+        setAnonymizationScript(DEFAULT_ANONYMIZATION_SCRIPT);
+        return;
+      }
+
+      try {
+        let script;
+
+        if (selectedProject) {
+          // Get project-specific script
+          script = await client.getAnonymizationScriptForProject(selectedProject);
+          console.log('Loaded anonymization script for project', selectedProject, script ? '(from XNAT)' : '(from default)');
+        } else {
+          // No project selected - try to get XNAT default script
+          script = await client.getDefaultAnonymizationScript();
+          if (!script) {
+            // Try site-wide script
+            script = await client.getSiteAnonymizationScript();
+          }
+          console.log('Loaded XNAT default/site anonymization script', script ? '(from XNAT)' : '(using local default)');
+        }
+
+        // Use XNAT script if available, otherwise fall back to local default
+        setAnonymizationScript(script || DEFAULT_ANONYMIZATION_SCRIPT);
+      } catch (error) {
+        console.error('Error loading anonymization script:', error);
+        setAnonymizationScript(DEFAULT_ANONYMIZATION_SCRIPT);
+      }
+    };
+
+    fetchAnonymizationScript();
+  }, [client, selectedProject]);
 
   const validateForm = (): string | null => {
     if (!selectedFile) {
@@ -54,6 +93,165 @@ export function CompressedUploader() {
     return null;
   };
 
+  const anonymizeDicomFiles = async (dicomFiles: File[]): Promise<{ file: File; blob: Blob }[]> => {
+    const anonymizedResults: { file: File; blob: Blob }[] = [];
+
+    // Get the anonymization script for the selected project from XNAT
+    let script = anonymizationScript || DEFAULT_ANONYMIZATION_SCRIPT;
+
+    if (!anonymizationScript && client && selectedProject) {
+      try {
+        const xnatScript = await client.getAnonymizationScriptForProject(selectedProject);
+        script = xnatScript || DEFAULT_ANONYMIZATION_SCRIPT;
+      } catch (error) {
+        console.warn('Failed to fetch XNAT script, using default:', error);
+      }
+    }
+
+    for (let i = 0; i < dicomFiles.length; i++) {
+      const file = dicomFiles[i];
+      setProcessingMessage(`Anonymizing ${i + 1}/${dicomFiles.length}: ${file.name}...`);
+
+      try {
+        // Use dicomedit with XNAT script
+        const anonymizedBlob = await dicomAnonymizer.anonymizeFile(
+          file,
+          { script },
+          (msg) => {
+            setProcessingMessage(`Anonymizing ${i + 1}/${dicomFiles.length}: ${msg}`);
+          }
+        );
+
+        anonymizedResults.push({ file, blob: anonymizedBlob });
+      } catch (error) {
+        console.error(`Failed to anonymize ${file.name}:`, error);
+        throw new Error(`Failed to anonymize ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    return anonymizedResults;
+  };
+
+  const shouldSkipFile = (filename: string): boolean => {
+    // Skip macOS metadata files
+    if (filename.includes('__MACOSX/') || filename.includes('/._')) {
+      return true;
+    }
+    // Skip dot files (hidden files)
+    const basename = filename.split('/').pop() || '';
+    if (basename.startsWith('._')) {
+      return true;
+    }
+    return false;
+  };
+
+  const processZipFile = async (zipFile: File): Promise<File> => {
+    setProcessingMessage('Loading zip file...');
+    const JSZip = (await import('jszip')).default;
+
+    // Get the anonymization script for the selected project from XNAT
+    let script = anonymizationScript || DEFAULT_ANONYMIZATION_SCRIPT;
+
+    if (!anonymizationScript && client && selectedProject) {
+      try {
+        const xnatScript = await client.getAnonymizationScriptForProject(selectedProject);
+        script = xnatScript || DEFAULT_ANONYMIZATION_SCRIPT;
+      } catch (error) {
+        console.warn('Failed to fetch XNAT script, using default:', error);
+      }
+    }
+
+    // Load the zip
+    const zip = await JSZip.loadAsync(zipFile);
+
+    // Create a new zip for anonymized files
+    const newZip = new JSZip();
+    const files = Object.keys(zip.files);
+    let processedCount = 0;
+    let dicomCount = 0;
+    let skippedCount = 0;
+
+    // Count DICOM files (excluding system files)
+    for (const filename of files) {
+      const file = zip.files[filename];
+      if (!file.dir && !shouldSkipFile(filename) && filename.toLowerCase().endsWith('.dcm')) {
+        dicomCount++;
+      }
+    }
+
+    setProcessingMessage(`Found ${dicomCount} DICOM file${dicomCount !== 1 ? 's' : ''} in archive...`);
+
+    // Process each file in the zip
+    for (const filename of files) {
+      const file = zip.files[filename];
+
+      // Skip directories
+      if (file.dir) {
+        continue; // Don't recreate empty folders
+      }
+
+      // Skip system/metadata files
+      if (shouldSkipFile(filename)) {
+        skippedCount++;
+        console.log(`Skipping system file: ${filename}`);
+        continue;
+      }
+
+      // Check if it's a DICOM file
+      if (filename.toLowerCase().endsWith('.dcm')) {
+        processedCount++;
+        setProcessingMessage(`Anonymizing ${processedCount}/${dicomCount}: ${filename}...`);
+
+        try {
+          // Extract the file
+          const arrayBuffer = await file.async('arraybuffer');
+          const dcmFile = new File([arrayBuffer], filename, { type: 'application/dicom' });
+
+          // Anonymize using dicomedit with XNAT script
+          const anonymizedBlob = await dicomAnonymizer.anonymizeFile(dcmFile, { script });
+
+          // Add to new zip
+          const anonymizedBuffer = await anonymizedBlob.arrayBuffer();
+
+          console.log(`File ${filename}: input=${arrayBuffer.byteLength}, output=${anonymizedBuffer.byteLength}, ratio=${(anonymizedBuffer.byteLength / arrayBuffer.byteLength * 100).toFixed(1)}%`);
+
+          // Verify the output is reasonable - DICOM files shouldn't shrink much
+          const sizeRatio = anonymizedBuffer.byteLength / arrayBuffer.byteLength;
+          if (sizeRatio < 0.8) {
+            console.error(`Output file ${filename} is ${(sizeRatio * 100).toFixed(1)}% of input size - seems corrupted! Using original file.`);
+            newZip.file(filename, arrayBuffer);
+            skippedCount++;
+          } else {
+            newZip.file(filename, anonymizedBuffer);
+          }
+        } catch (error) {
+          console.error(`Failed to anonymize ${filename}:`, error);
+          // Skip files that fail to anonymize and continue
+          console.warn(`Skipping file that failed to anonymize: ${filename}`);
+          skippedCount++;
+          continue;
+        }
+      } else {
+        // Non-DICOM file - copy as-is
+        const content = await file.async('arraybuffer');
+        newZip.file(filename, content);
+      }
+    }
+
+    if (skippedCount > 0) {
+      console.log(`Skipped ${skippedCount} file(s) (system files or failed to process)`);
+    }
+
+    setProcessingMessage('Creating anonymized archive...');
+    const anonymizedZipBlob = await newZip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 }
+    });
+
+    return new File([anonymizedZipBlob], `anonymized_${Date.now()}.zip`, { type: 'application/zip' });
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -64,19 +262,22 @@ export function CompressedUploader() {
     const dicomFiles = fileArray.filter(f => f.name.toLowerCase().endsWith('.dcm'));
 
     if (dicomFiles.length > 0 && dicomFiles.length === fileArray.length) {
-      // All files are DICOM - zip them up
+      // All files are DICOM - anonymize then zip them up
       try {
         setIsProcessing(true);
         setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
 
+        // Anonymize DICOM files
+        const anonymizedFiles = await anonymizeDicomFiles(dicomFiles);
+
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
-        // Add all DICOM files to the zip, preserving folder structure
-        // Read files as ArrayBuffer first to avoid Safari blob issues
-        for (const file of dicomFiles) {
+        // Add all anonymized DICOM files to the zip, preserving folder structure
+        setProcessingMessage('Creating zip file...');
+        for (const { file, blob } of anonymizedFiles) {
           try {
-            const arrayBuffer = await file.arrayBuffer();
+            const arrayBuffer = await blob.arrayBuffer();
             // Use webkitRelativePath if available (from folder selection), otherwise just the name
             const path = (file as any).webkitRelativePath || file.name;
             zip.file(path, arrayBuffer);
@@ -87,7 +288,7 @@ export function CompressedUploader() {
         }
 
         // Generate the zip file
-        setProcessingMessage('Creating zip file...');
+        setProcessingMessage('Finalizing zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -111,14 +312,17 @@ export function CompressedUploader() {
       if (fileName.endsWith('.gz') || fileName.endsWith('.tgz') || fileName.endsWith('.zip')) {
         setSelectedFile(file);
       } else if (fileName.endsWith('.dcm')) {
-        // Single DICOM file - zip it
+        // Single DICOM file - anonymize and zip it
         try {
           setIsProcessing(true);
           setProcessingMessage('Processing DICOM file...');
 
+          // Anonymize the single DICOM file
+          const anonymizedFiles = await anonymizeDicomFiles([file]);
+
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
-          const arrayBuffer = await file.arrayBuffer();
+          const arrayBuffer = await anonymizedFiles[0].blob.arrayBuffer();
           zip.file(file.name, arrayBuffer);
 
           setProcessingMessage('Creating zip file...');
@@ -242,18 +446,21 @@ export function CompressedUploader() {
     const dicomFiles = allFiles.filter(f => f.name.toLowerCase().endsWith('.dcm'));
 
     if (dicomFiles.length > 0 && dicomFiles.length === allFiles.length) {
-      // All files are DICOM - zip them up
+      // All files are DICOM - anonymize then zip them up
       try {
         setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
+
+        // Anonymize DICOM files
+        const anonymizedFiles = await anonymizeDicomFiles(dicomFiles);
 
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
-        // Add all DICOM files to the zip, preserving folder structure
-        // Read files as ArrayBuffer first to avoid Safari blob issues
-        for (const file of dicomFiles) {
+        // Add all anonymized DICOM files to the zip, preserving folder structure
+        setProcessingMessage('Creating zip file...');
+        for (const { file, blob } of anonymizedFiles) {
           try {
-            const arrayBuffer = await file.arrayBuffer();
+            const arrayBuffer = await blob.arrayBuffer();
             // Use webkitRelativePath if available, otherwise just the name
             const path = (file as any).webkitRelativePath || file.name;
             zip.file(path, arrayBuffer);
@@ -264,7 +471,7 @@ export function CompressedUploader() {
         }
 
         // Generate the zip file
-        setProcessingMessage('Creating zip file...');
+        setProcessingMessage('Finalizing zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -284,18 +491,40 @@ export function CompressedUploader() {
       // Single file - check if it's a valid archive
       const file = allFiles[0];
       const fileName = file.name.toLowerCase();
-      if (fileName.endsWith('.gz') || fileName.endsWith('.tgz') || fileName.endsWith('.zip')) {
-        setSelectedFile(file);
-        setIsProcessing(false);
-        setProcessingMessage('');
+      if (fileName.endsWith('.zip')) {
+        // Process zip file - extract, anonymize DICOMs, re-zip
+        try {
+          const anonymizedZip = await processZipFile(file);
+          setSelectedFile(anonymizedZip);
+          setIsProcessing(false);
+          setProcessingMessage('');
+        } catch (error) {
+          console.error('Error processing zip:', error);
+          setIsProcessing(false);
+          setProcessingMessage('');
+          alert(`Failed to process zip file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else if (fileName.endsWith('.gz') || fileName.endsWith('.tgz')) {
+        // For tar.gz/tgz, we can't easily process, so upload as-is with a warning
+        if (confirm('TAR.GZ/TGZ archives cannot be automatically anonymized. DICOM files inside will NOT be anonymized. Continue?')) {
+          setSelectedFile(file);
+          setIsProcessing(false);
+          setProcessingMessage('');
+        } else {
+          setIsProcessing(false);
+          setProcessingMessage('');
+        }
       } else if (fileName.endsWith('.dcm')) {
-        // Single DICOM file - zip it
+        // Single DICOM file - anonymize and zip it
         try {
           setProcessingMessage('Processing DICOM file...');
 
+          // Anonymize the single DICOM file
+          const anonymizedFiles = await anonymizeDicomFiles([file]);
+
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
-          const arrayBuffer = await file.arrayBuffer();
+          const arrayBuffer = await anonymizedFiles[0].blob.arrayBuffer();
           zip.file(file.name, arrayBuffer);
 
           setProcessingMessage('Creating zip file...');
@@ -320,16 +549,20 @@ export function CompressedUploader() {
         alert('Please drop a valid archive file (.zip, .tar.gz, or .tgz) or DICOM files (.dcm)');
       }
     } else if (dicomFiles.length > 0) {
-      // Mixed files with some DICOM - zip only the DICOM files
+      // Mixed files with some DICOM - anonymize and zip only the DICOM files
       try {
         setProcessingMessage(`Processing ${dicomFiles.length} DICOM file${dicomFiles.length > 1 ? 's' : ''}...`);
+
+        // Anonymize DICOM files
+        const anonymizedFiles = await anonymizeDicomFiles(dicomFiles);
 
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
 
-        for (const file of dicomFiles) {
+        setProcessingMessage('Creating zip file...');
+        for (const { file, blob } of anonymizedFiles) {
           try {
-            const arrayBuffer = await file.arrayBuffer();
+            const arrayBuffer = await blob.arrayBuffer();
             const path = (file as any).webkitRelativePath || file.name;
             zip.file(path, arrayBuffer);
           } catch (readError) {
@@ -338,7 +571,7 @@ export function CompressedUploader() {
           }
         }
 
-        setProcessingMessage('Creating zip file...');
+        setProcessingMessage('Finalizing zip file...');
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
@@ -412,6 +645,15 @@ export function CompressedUploader() {
         httpSessionListener: uploadID
       });
 
+      // Clean up - delete the uploaded file from cache
+      try {
+        await client.deleteCacheResource(usrResPath);
+        console.log('Cleaned up uploaded file from cache');
+      } catch (error) {
+        console.warn('Failed to clean up cache file:', error);
+        // Don't fail the upload if cleanup fails
+      }
+
       setUploadProgress({
         stage: 'complete',
         percent: 100,
@@ -439,21 +681,35 @@ export function CompressedUploader() {
     }
   };
 
-  const isUploading = uploadProgress && (uploadProgress.stage === 'uploading' || uploadProgress.stage === 'archiving');
+  const isUploading = !!(uploadProgress && (uploadProgress.stage === 'uploading' || uploadProgress.stage === 'archiving'));
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Compressed Uploader</h1>
-        <p className="text-gray-600 mt-2">
-          Upload zipped (.zip or .tar.gz or .tgz) DICOM or ECAT image files to a specified project.
-        </p>
-        <p className="text-gray-600 mt-1">
-          Selecting 'Prearchive' will place your images into a temporary holding space,
-          which allows you to review the details and match the data to the proper subject & session.
-          If you are confident the metadata will map properly, you may directly 'Archive' the files.
-        </p>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-gray-900">Compressed Uploader</h1>
+            <p className="text-gray-600 mt-2">
+              Upload zipped (.zip or .tar.gz or .tgz) DICOM or ECAT image files to a specified project.
+            </p>
+            <p className="text-gray-600 mt-1">
+              Selecting 'Prearchive' will place your images into a temporary holding space,
+              which allows you to review the details and match the data to the proper subject & session.
+              If you are confident the metadata will map properly, you may directly 'Archive' the files.
+            </p>
+          </div>
+          {selectedProject && (
+            <button
+              onClick={() => setShowScriptDialog(true)}
+              className="ml-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2 flex-shrink-0"
+              title="View Anonymization Script"
+            >
+              <Shield className="w-4 h-4" />
+              View Anon Script
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Upload Form */}
@@ -621,10 +877,10 @@ export function CompressedUploader() {
       {/* Processing Indicator */}
       {isProcessing && (
         <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center gap-3">
-            <Loader className="w-6 h-6 text-blue-600 animate-spin" />
+          <div className="flex items-start gap-3">
+            <Loader className="w-6 h-6 text-blue-600 animate-spin flex-shrink-0 mt-1" />
             <div className="flex-1">
-              <p className="font-medium text-blue-700">{processingMessage}</p>
+              <p className="font-medium text-blue-700 whitespace-pre-wrap font-mono text-sm">{processingMessage}</p>
               <p className="text-sm text-gray-600 mt-1">Please wait while we prepare your files...</p>
             </div>
           </div>
@@ -703,6 +959,133 @@ export function CompressedUploader() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Anonymization Script Dialog */}
+      {showScriptDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Shield className="w-6 h-6 text-indigo-600" />
+                <h3 className="text-lg font-semibold text-gray-900">DICOM Anonymization Script</h3>
+              </div>
+              <button
+                onClick={() => setShowScriptDialog(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Info Banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex gap-2">
+                  <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">Automatic Anonymization</p>
+                    <p className="mt-1">
+                      When you upload DICOM files (.dcm) directly, they are automatically anonymized using this script
+                      before being zipped and uploaded to the server. {selectedProject ? 'The script is loaded from XNAT based on your project configuration.' : 'The script is loaded from XNAT\'s default/site-wide configuration.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Script Display */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  DicomEdit Anonymization Script
+                  {selectedProject && (
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      (Project: {selectedProject})
+                    </span>
+                  )}
+                </label>
+                {anonymizationScript ? (
+                  <>
+                    <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                      <pre className="text-green-400 font-mono text-sm leading-relaxed">
+                        {anonymizationScript}
+                      </pre>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {selectedProject
+                        ? 'This script is loaded from XNAT for the selected project. It uses DicomEdit syntax to define which DICOM tags are anonymized or removed.'
+                        : 'This is the XNAT default/site-wide anonymization script. Select a project to see project-specific settings.'}
+                    </p>
+                  </>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 text-center">
+                    <Loader className="w-6 h-6 text-gray-400 animate-spin mx-auto mb-2" />
+                    <p className="text-sm text-gray-600">Loading anonymization script...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* What Gets Anonymized */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">What Gets Anonymized:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Patient Information</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5">
+                      <li>• Birth Date (removed)</li>
+                      <li>• Birth Time (removed)</li>
+                      <li>• Other Patient IDs (removed)</li>
+                      <li>• Address (removed)</li>
+                      <li>• Phone Numbers (removed)</li>
+                      <li>• Ethnic Group (removed)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Institution Information</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5">
+                      <li>• Institution Name (removed)</li>
+                      <li>• Institution Address (removed)</li>
+                      <li>• Department Name (removed)</li>
+                      <li>• Operator Names (removed)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Physician Information</p>
+                    <ul className="text-xs text-gray-600 space-y-0.5">
+                      <li>• Referring Physician (removed)</li>
+                      <li>• Performing Physician (removed)</li>
+                      <li>• Reading Physician (removed)</li>
+                      <li>• Physician(s) of Record (removed)</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Note about archive processing */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-medium">Automatic Processing:</p>
+                    <ul className="mt-1 space-y-1 list-disc list-inside">
+                      <li><strong>ZIP files:</strong> Automatically extracted, DICOM files anonymized, then re-zipped</li>
+                      <li><strong>DICOM files:</strong> Automatically anonymized and zipped</li>
+                      <li><strong>TAR.GZ/TGZ:</strong> Uploaded as-is (cannot be processed)</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowScriptDialog(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

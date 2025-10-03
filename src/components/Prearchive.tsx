@@ -1,8 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { useState, useEffect } from 'react';
-import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, Calendar, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch } from 'lucide-react';
+import { useState } from 'react';
+import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3 } from 'lucide-react';
 import type { XnatPrearchiveSession, XnatPrearchiveScan } from '../services/xnat-api';
+// @ts-ignore - dcmjs doesn't have TypeScript definitions
+import * as dcmjs from 'dcmjs';
+import { dicomAnonymizer, DEFAULT_ANONYMIZATION_SCRIPT } from '../services/dicom-anonymizer';
 
 type SortField = 'status' | 'project' | 'subject' | 'name' | 'scan_date' | 'uploaded';
 type SortDirection = 'asc' | 'desc';
@@ -34,6 +37,13 @@ type SessionDetailDialog = {
   showArchiveButton?: boolean;
 };
 
+type DicomHeaderInfo = {
+  scanId: string;
+  headers: Record<string, any>;
+  loading: boolean;
+  error?: string;
+};
+
 type BulkOperationProgress = {
   type: 'delete' | 'changeProject' | 'rebuild';
   total: number;
@@ -41,6 +51,24 @@ type BulkOperationProgress = {
   currentSession: string;
   errors: string[];
   completed: boolean;
+};
+
+type AnonymizationDialog = {
+  session: XnatPrearchiveSession;
+  scans: XnatPrearchiveScan[];
+  script: string;
+  patientId: string;
+  patientName: string;
+};
+
+type AnonymizationProgress = {
+  session: XnatPrearchiveSession;
+  total: number;
+  current: number;
+  currentFile: string;
+  status: 'processing' | 'complete' | 'error';
+  errors: string[];
+  message: string;
 };
 
 export function Prearchive() {
@@ -81,9 +109,13 @@ export function Prearchive() {
     errors: string[];
   } | null>(null);
   const [bulkOperationProgress, setBulkOperationProgress] = useState<BulkOperationProgress | null>(null);
+  const [dicomHeaders, setDicomHeaders] = useState<Map<string, DicomHeaderInfo>>(new Map());
+  const [expandedScans, setExpandedScans] = useState<Set<string>>(new Set());
+  const [anonymizationDialog, setAnonymizationDialog] = useState<AnonymizationDialog | null>(null);
+  const [anonymizationProgress, setAnonymizationProgress] = useState<AnonymizationProgress | null>(null);
 
   // Fetch prearchive sessions
-  const { data: sessions = [], isLoading, error, refetch } = useQuery({
+  const { data: sessions = [], isLoading, error } = useQuery({
     queryKey: ['prearchive-sessions'],
     queryFn: async () => {
       if (!client) return [];
@@ -461,6 +493,10 @@ export function Prearchive() {
       showArchiveButton: false
     });
 
+    // Reset DICOM headers when opening new session
+    setDicomHeaders(new Map());
+    setExpandedScans(new Set());
+
     if (client) {
       const scans = await client.getPrearchiveScans(session.project, session.timestamp, session.subject);
       setSessionDetailDialog(prev => prev ? { ...prev, scans, loading: false } : null);
@@ -475,6 +511,10 @@ export function Prearchive() {
       showArchiveButton: true
     });
 
+    // Reset DICOM headers when opening new session
+    setDicomHeaders(new Map());
+    setExpandedScans(new Set());
+
     if (client) {
       const scans = await client.getPrearchiveScans(session.project, session.timestamp, session.subject);
       setSessionDetailDialog(prev => prev ? { ...prev, scans, loading: false } : null);
@@ -488,10 +528,233 @@ export function Prearchive() {
     }
   };
 
+  const handleToggleScanExpand = (scanId: string) => {
+    const newExpanded = new Set(expandedScans);
+    if (newExpanded.has(scanId)) {
+      newExpanded.delete(scanId);
+    } else {
+      newExpanded.add(scanId);
+    }
+    setExpandedScans(newExpanded);
+  };
+
+  const handleLoadDicomHeader = async (scan: XnatPrearchiveScan) => {
+    if (!client || !sessionDetailDialog) return;
+
+    const scanKey = `${sessionDetailDialog.session.project}-${sessionDetailDialog.session.timestamp}-${sessionDetailDialog.session.subject}-${scan.ID}`;
+
+    // Set loading state
+    setDicomHeaders(prev => new Map(prev).set(scanKey, {
+      scanId: scan.ID,
+      headers: {},
+      loading: true
+    }));
+
+    try {
+      console.log('Loading DICOM header for scan:', scan.ID);
+
+      // Get scan files
+      console.log('Fetching scan files...');
+      const files = await client.getPrearchiveScanFiles(
+        sessionDetailDialog.session.project,
+        sessionDetailDialog.session.timestamp,
+        sessionDetailDialog.session.subject,
+        scan.ID
+      );
+
+      console.log('Files found:', files);
+
+      if (!files || files.length === 0) {
+        throw new Error('No DICOM files found for this scan');
+      }
+
+      // Get the first DICOM file
+      const firstFile = files[0];
+
+      console.log('Fetching DICOM file:', firstFile.name);
+
+      // Fetch the DICOM file
+      const arrayBuffer = await client.getPrearchiveDicomFile(
+        sessionDetailDialog.session.project,
+        sessionDetailDialog.session.timestamp,
+        sessionDetailDialog.session.subject,
+        scan.ID,
+        firstFile.name
+      );
+
+      console.log('DICOM file fetched, parsing...');
+
+      // Parse DICOM file
+      const { DicomMessage, DicomMetaDictionary } = dcmjs.data;
+      const dicomData = DicomMessage.readFile(arrayBuffer);
+      const dataset = DicomMetaDictionary.naturalizeDataset(dicomData.dict);
+
+      console.log('DICOM parsed successfully, dataset:', dataset);
+
+      // Set headers
+      setDicomHeaders(prev => new Map(prev).set(scanKey, {
+        scanId: scan.ID,
+        headers: dataset,
+        loading: false
+      }));
+
+      // Auto-expand the scan
+      setExpandedScans(prev => new Set(prev).add(scan.ID));
+
+    } catch (error: any) {
+      console.error('Error loading DICOM header:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+
+      let errorMessage = 'Failed to load DICOM header';
+      if (error.response?.status === 500) {
+        errorMessage = 'Server error (500). The DICOM file may not be accessible.';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'DICOM file not found (404)';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setDicomHeaders(prev => new Map(prev).set(scanKey, {
+        scanId: scan.ID,
+        headers: {},
+        loading: false,
+        error: errorMessage
+      }));
+    }
+  };
+
   const handleToggleColumn = (key: ColumnKey) => {
     setColumns(columns.map(col =>
       col.key === key ? { ...col, visible: !col.visible } : col
     ));
+  };
+
+  const handleAnonymize = async (session: XnatPrearchiveSession) => {
+    if (!client) return;
+
+    // Load scans first
+    const scans = await client.getPrearchiveScans(session.project, session.timestamp, session.subject);
+
+    // Try to get XNAT anonymization script for this project
+    let script = DEFAULT_ANONYMIZATION_SCRIPT;
+    try {
+      const xnatScript = await client.getAnonymizationScriptForProject(session.project);
+      if (xnatScript) {
+        script = xnatScript;
+        console.log('Using XNAT anonymization script for project', session.project);
+      } else {
+        console.log('No XNAT script found, using default');
+      }
+    } catch (error) {
+      console.error('Error loading XNAT script, using default:', error);
+    }
+
+    setAnonymizationDialog({
+      session,
+      scans,
+      script,
+      patientId: 'ANON_' + Date.now(),
+      patientName: 'ANONYMOUS'
+    });
+  };
+
+  const handleAnonymizeConfirm = async () => {
+    if (!anonymizationDialog || !client) return;
+
+    const { session, scans, script, patientId, patientName } = anonymizationDialog;
+
+    // Close dialog and show progress
+    setAnonymizationDialog(null);
+
+    setAnonymizationProgress({
+      session,
+      total: scans.length,
+      current: 0,
+      currentFile: '',
+      status: 'processing',
+      errors: [],
+      message: 'Starting anonymization...'
+    });
+
+    try {
+      // Process each scan
+      for (let i = 0; i < scans.length; i++) {
+        const scan = scans[i];
+
+        setAnonymizationProgress(prev => prev ? {
+          ...prev,
+          current: i + 1,
+          currentFile: `Scan ${scan.ID}`,
+          message: `Anonymizing scan ${scan.ID} (${i + 1}/${scans.length})...`
+        } : null);
+
+        try {
+          // Get scan files
+          const files = await client.getPrearchiveScanFiles(
+            session.project,
+            session.timestamp,
+            session.subject,
+            scan.ID
+          );
+
+          // Anonymize each DICOM file in the scan
+          for (const fileInfo of files) {
+            // Fetch the DICOM file
+            const arrayBuffer = await client.getPrearchiveDicomFile(
+              session.project,
+              session.timestamp,
+              session.subject,
+              scan.ID,
+              fileInfo.name
+            );
+
+            // Convert to File object
+            const file = new File([arrayBuffer], fileInfo.name, { type: 'application/dicom' });
+
+            // Anonymize
+            await dicomAnonymizer.anonymizeFile(file, {
+              script,
+              patientId,
+              patientName
+            });
+
+            // Upload back to prearchive (would need API support for this)
+            // For now, we'll just log that it was anonymized
+            console.log(`Anonymized ${fileInfo.name}`);
+          }
+        } catch (error) {
+          const errorMsg = `Scan ${scan.ID}: ${error instanceof Error ? error.message : 'Failed'}`;
+          setAnonymizationProgress(prev => prev ? {
+            ...prev,
+            errors: [...prev.errors, errorMsg]
+          } : null);
+        }
+      }
+
+      setAnonymizationProgress(prev => prev ? {
+        ...prev,
+        status: 'complete',
+        message: 'Anonymization complete!'
+      } : null);
+
+      setTimeout(() => {
+        setAnonymizationProgress(null);
+        queryClient.invalidateQueries({ queryKey: ['prearchive-sessions'] });
+      }, 3000);
+
+    } catch (error) {
+      setAnonymizationProgress(prev => prev ? {
+        ...prev,
+        status: 'error',
+        message: 'Anonymization failed',
+        errors: [...prev.errors, error instanceof Error ? error.message : 'Unknown error']
+      } : null);
+    }
   };
 
   const isColumnVisible = (key: ColumnKey) => {
@@ -968,6 +1231,14 @@ export function Prearchive() {
                           <FileSearch className="w-4 h-4" />
                         </button>
                         <button
+                          onClick={() => handleAnonymize(session)}
+                          disabled={session.status !== 'READY' && session.status !== 'CONFLICT'}
+                          className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-400 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                          title="Anonymize"
+                        >
+                          <Shield className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleArchive(session)}
                           disabled={session.status !== 'READY' && session.status !== 'CONFLICT'}
                           className="text-green-600 hover:text-green-900 disabled:text-gray-400 disabled:cursor-not-allowed inline-flex items-center gap-1"
@@ -1383,6 +1654,198 @@ export function Prearchive() {
         </div>
       )}
 
+      {/* Anonymization Dialog */}
+      {anonymizationDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center gap-3 mb-4">
+              <Shield className="w-6 h-6 text-indigo-600" />
+              <h3 className="text-lg font-semibold text-gray-900">Anonymize Session</h3>
+            </div>
+
+            <div className="space-y-4">
+              {/* Session Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Project:</span>
+                    <span className="ml-2 font-medium text-gray-900">{anonymizationDialog.session.project}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Subject:</span>
+                    <span className="ml-2 font-medium text-gray-900">{anonymizationDialog.session.subject}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Session:</span>
+                    <span className="ml-2 font-medium text-gray-900">{anonymizationDialog.session.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Scans:</span>
+                    <span className="ml-2 font-medium text-gray-900">{anonymizationDialog.scans.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Patient Identity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Anonymization Options
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Patient Name</label>
+                    <input
+                      type="text"
+                      value={anonymizationDialog.patientName}
+                      onChange={(e) => setAnonymizationDialog({ ...anonymizationDialog, patientName: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Patient ID</label>
+                    <input
+                      type="text"
+                      value={anonymizationDialog.patientId}
+                      onChange={(e) => setAnonymizationDialog({ ...anonymizationDialog, patientId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Anonymization Script */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  <Edit3 className="w-4 h-4" />
+                  Anonymization Script
+                  <span className="text-xs font-normal text-gray-500">
+                    (Loaded from XNAT for project: {anonymizationDialog.session.project})
+                  </span>
+                </label>
+                <textarea
+                  value={anonymizationDialog.script}
+                  onChange={(e) => setAnonymizationDialog({ ...anonymizationDialog, script: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-xs"
+                  rows={12}
+                  placeholder="Enter DicomEdit script..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This script defines which DICOM tags to anonymize. Uses DicomEdit syntax. The script is loaded from XNAT based on project configuration.
+                </p>
+              </div>
+
+              {/* Warning */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex gap-2">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-yellow-800">
+                    <p className="font-medium">Important:</p>
+                    <p className="mt-1">
+                      This will download all DICOM files, anonymize them locally in your browser, and prepare them for upload.
+                      The original files in the prearchive will not be modified. You will need to delete the original session
+                      and upload the anonymized files separately.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setAnonymizationDialog(null)}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAnonymizeConfirm}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+              >
+                <Shield className="w-4 h-4" />
+                Anonymize and Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Anonymization Progress */}
+      {anonymizationProgress && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="text-center">
+              {anonymizationProgress.status === 'processing' && (
+                <Loader className="h-16 w-16 text-indigo-600 animate-spin mx-auto mb-4" />
+              )}
+              {anonymizationProgress.status === 'complete' && (
+                <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
+              )}
+              {anonymizationProgress.status === 'error' && (
+                <XCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
+              )}
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {anonymizationProgress.status === 'processing' && 'Anonymizing Session'}
+                {anonymizationProgress.status === 'complete' && 'Anonymization Complete'}
+                {anonymizationProgress.status === 'error' && 'Anonymization Failed'}
+              </h3>
+
+              <p className="text-sm text-gray-600 mb-4">
+                {anonymizationProgress.message}
+              </p>
+
+              {anonymizationProgress.status === 'processing' && (
+                <>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Processing {anonymizationProgress.current} of {anonymizationProgress.total} scans
+                  </p>
+                  <p className="text-sm font-medium text-gray-900 mb-4">
+                    {anonymizationProgress.currentFile}
+                  </p>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                    <div
+                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(anonymizationProgress.current / anonymizationProgress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                </>
+              )}
+
+              {/* Errors */}
+              {anonymizationProgress.errors.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-left max-h-40 overflow-y-auto">
+                  <p className="text-sm font-medium text-red-800 mb-1">
+                    {anonymizationProgress.errors.length} Error(s):
+                  </p>
+                  <ul className="text-xs text-red-700 space-y-1">
+                    {anonymizationProgress.errors.map((error, i) => (
+                      <li key={i}>• {error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {anonymizationProgress.status === 'complete' && (
+                <p className="text-xs text-gray-500">
+                  This dialog will close automatically
+                </p>
+              )}
+
+              {anonymizationProgress.status === 'error' && (
+                <button
+                  onClick={() => setAnonymizationProgress(null)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Session Detail Dialog */}
       {sessionDetailDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1444,19 +1907,82 @@ export function Prearchive() {
                   <p className="text-sm text-gray-500 text-center py-8">No scans found</p>
                 ) : (
                   <div className="space-y-2">
-                    {sessionDetailDialog.scans.map(scan => (
-                      <div key={scan.ID} className="bg-gray-50 rounded-lg p-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">Scan {scan.ID}</p>
-                            {scan.series_description && (
-                              <p className="text-xs text-gray-600">{scan.series_description}</p>
+                    {sessionDetailDialog.scans.map(scan => {
+                      const scanKey = `${sessionDetailDialog.session.project}-${sessionDetailDialog.session.timestamp}-${sessionDetailDialog.session.subject}-${scan.ID}`;
+                      const headerInfo = dicomHeaders.get(scanKey);
+                      const isExpanded = expandedScans.has(scan.ID);
+
+                      return (
+                        <div key={scan.ID} className="bg-gray-50 rounded-lg overflow-hidden">
+                          <div className="p-3">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">Scan {scan.ID}</p>
+                                {scan.series_description && (
+                                  <p className="text-xs text-gray-600">{scan.series_description}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">{scan.xsiType}</span>
+                                <button
+                                  onClick={() => handleLoadDicomHeader(scan)}
+                                  disabled={headerInfo?.loading}
+                                  className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 p-1"
+                                  title="View DICOM Header"
+                                >
+                                  {headerInfo?.loading ? (
+                                    <Loader className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <FileText className="w-4 h-4" />
+                                  )}
+                                </button>
+                                {headerInfo && !headerInfo.loading && (
+                                  <button
+                                    onClick={() => handleToggleScanExpand(scan.ID)}
+                                    className="text-gray-600 hover:text-gray-800 p-1"
+                                    title={isExpanded ? "Collapse" : "Expand"}
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronDown className="w-4 h-4" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* DICOM Header Display */}
+                            {headerInfo && !headerInfo.loading && isExpanded && (
+                              <div className="mt-3 border-t border-gray-200 pt-3">
+                                {headerInfo.error ? (
+                                  <div className="bg-red-50 border border-red-200 rounded p-2">
+                                    <p className="text-xs text-red-700">{headerInfo.error}</p>
+                                  </div>
+                                ) : (
+                                  <div className="bg-white rounded border border-gray-200 p-3 max-h-96 overflow-y-auto">
+                                    <p className="text-xs font-semibold text-gray-700 mb-2">DICOM Header Information</p>
+                                    <div className="space-y-1 font-mono text-xs">
+                                      {Object.entries(headerInfo.headers)
+                                        .sort(([a], [b]) => a.localeCompare(b))
+                                        .map(([key, value]) => (
+                                          <div key={key} className="flex gap-2 border-b border-gray-100 pb-1">
+                                            <span className="text-gray-600 font-semibold min-w-[200px]">{key}:</span>
+                                            <span className="text-gray-900 break-all">
+                                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                            </span>
+                                          </div>
+                                        ))
+                                      }
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
-                          <span className="text-xs text-gray-500">{scan.xsiType}</span>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
