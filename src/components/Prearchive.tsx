@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
 import { useState } from 'react';
-import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3 } from 'lucide-react';
+import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2, Grid3x3, List } from 'lucide-react';
 import type { XnatPrearchiveSession, XnatPrearchiveScan } from '../services/xnat-api';
 // @ts-ignore - dcmjs doesn't have TypeScript definitions
 import * as dcmjs from 'dcmjs';
@@ -102,6 +102,7 @@ export function Prearchive() {
   const [archiveProgress, setArchiveProgress] = useState<ArchiveProgress | null>(null);
   const [changeProjectDialog, setChangeProjectDialog] = useState<ChangeProjectDialog | null>(null);
   const [sessionDetailDialog, setSessionDetailDialog] = useState<SessionDetailDialog | null>(null);
+  const [isDialogMaximized, setIsDialogMaximized] = useState(false);
   const [bulkArchiveProgress, setBulkArchiveProgress] = useState<{
     total: number;
     current: number;
@@ -574,6 +575,14 @@ export function Prearchive() {
       console.log('Fetching DICOM file:', firstFile.name);
 
       // Fetch the DICOM file
+      console.log('Fetching DICOM file from:', {
+        project: sessionDetailDialog.session.project,
+        timestamp: sessionDetailDialog.session.timestamp,
+        subject: sessionDetailDialog.session.subject,
+        scanId: scan.ID,
+        fileName: firstFile.name
+      });
+
       const arrayBuffer = await client.getPrearchiveDicomFile(
         sessionDetailDialog.session.project,
         sessionDetailDialog.session.timestamp,
@@ -582,7 +591,7 @@ export function Prearchive() {
         firstFile.name
       );
 
-      console.log('DICOM file fetched, parsing...');
+      console.log('DICOM file fetched, size:', arrayBuffer.byteLength, 'bytes, parsing...');
 
       // Parse DICOM file
       const { DicomMessage, DicomMetaDictionary } = dcmjs.data;
@@ -612,9 +621,11 @@ export function Prearchive() {
 
       let errorMessage = 'Failed to load DICOM header';
       if (error.response?.status === 500) {
-        errorMessage = 'Server error (500). The DICOM file may not be accessible.';
+        errorMessage = 'Server error (500). The DICOM file may not be accessible or the scan may not contain valid DICOM data.';
       } else if (error.response?.status === 404) {
-        errorMessage = 'DICOM file not found (404)';
+        errorMessage = 'DICOM file not found (404). The scan may not have been fully uploaded.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Access denied (403). You may not have permission to access this DICOM file.';
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -1849,8 +1860,19 @@ export function Prearchive() {
       {/* Session Detail Dialog */}
       {sessionDetailDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Session Details</h3>
+          <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
+            isDialogMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-2xl w-full max-h-[80vh]'
+          }`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Session Details</h3>
+              <button
+                onClick={() => setIsDialogMaximized(!isDialogMaximized)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title={isDialogMaximized ? 'Restore' : 'Maximize'}
+              >
+                {isDialogMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              </button>
+            </div>
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1962,19 +1984,21 @@ export function Prearchive() {
                                 ) : (
                                   <div className="bg-white rounded border border-gray-200 p-3 max-h-96 overflow-y-auto">
                                     <p className="text-xs font-semibold text-gray-700 mb-2">DICOM Header Information</p>
-                                    <div className="space-y-1 font-mono text-xs">
-                                      {Object.entries(headerInfo.headers)
-                                        .sort(([a], [b]) => a.localeCompare(b))
-                                        .map(([key, value]) => (
-                                          <div key={key} className="flex gap-2 border-b border-gray-100 pb-1">
-                                            <span className="text-gray-600 font-semibold min-w-[200px]">{key}:</span>
-                                            <span className="text-gray-900 break-all">
-                                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                            </span>
-                                          </div>
-                                        ))
-                                      }
-                                    </div>
+                                    <table className="w-full font-mono text-xs">
+                                      <tbody>
+                                        {Object.entries(headerInfo.headers)
+                                          .sort(([a], [b]) => a.localeCompare(b))
+                                          .map(([key, value]) => (
+                                            <tr key={key} className="border-b border-gray-100">
+                                              <td className="text-gray-600 font-semibold py-1 pr-4 whitespace-nowrap align-top">{key}:</td>
+                                              <td className="text-gray-900 py-1 break-words">
+                                                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                              </td>
+                                            </tr>
+                                          ))
+                                        }
+                                      </tbody>
+                                    </table>
                                   </div>
                                 )}
                               </div>

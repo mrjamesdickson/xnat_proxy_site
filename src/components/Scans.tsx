@@ -11,11 +11,18 @@ import {
   HardDrive,
   Image as ImageIcon,
   Filter,
-  Search
+  Search,
+  FileText,
+  Maximize2,
+  Minimize2,
+  X
 } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
+import type { XnatScan } from '../services/xnat-api';
+// @ts-ignore - dcmjs doesn't have TypeScript definitions
+import * as dcmjs from 'dcmjs';
 
 export function Scans() {
   const { project, subject, experiment } = useParams<{
@@ -30,6 +37,12 @@ export function Scans() {
   const { client } = useXnat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
+  const [dicomHeaderDialog, setDicomHeaderDialog] = useState<XnatScan | null>(null);
+  const [isHeaderDialogMaximized, setIsHeaderDialogMaximized] = useState(false);
+  const [rawDicomHeaders, setRawDicomHeaders] = useState<Record<string, any> | null>(null);
+  const [loadingRawHeaders, setLoadingRawHeaders] = useState(false);
+  const [rawHeadersError, setRawHeadersError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'metadata' | 'raw'>('metadata');
 
   const { data: experimentData } = useQuery({
     queryKey: ['experiment', project, subject, experiment],
@@ -77,6 +90,64 @@ export function Scans() {
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const loadRawDicomHeaders = async (scan: XnatScan) => {
+    if (!client || !project || !subject || !experiment) return;
+
+    setLoadingRawHeaders(true);
+    setRawHeadersError(null);
+    setRawDicomHeaders(null);
+
+    try {
+      console.log('Fetching DICOM headers for scan:', scan.id);
+      console.log('Parameters:', { project, experiment, scanId: scan.id });
+
+      // Log the curl command for DICOM dump service
+      const baseUrl = client.getBaseUrl();
+      const dumpUrl = `${baseUrl}/REST/services/dicomdump?src=/archive/projects/${project}/experiments/${experiment}/scans/${scan.id}&format=json`;
+      console.log('\n=== CURL COMMAND ===');
+      console.log(`curl -u "admin:admin" "${dumpUrl}"`);
+      console.log('===================\n');
+
+      // Use the DICOM dump service (faster, no need to download full file)
+      const dicomDump = await client.getDicomDump(project, experiment, scan.id);
+      console.log('DICOM dump received, entries:', dicomDump.length);
+
+      if (!dicomDump || dicomDump.length === 0) {
+        throw new Error('No DICOM data returned from dump service');
+      }
+
+      // Convert DICOM dump format to a more readable object
+      const headers: Record<string, any> = {};
+      dicomDump.forEach(entry => {
+        const key = entry.desc || entry.tag1;
+        const value = entry.value || 'N/A';
+        // Include tag info for technical users
+        const displayKey = entry.tag1 ? `${key} (${entry.tag1})` : key;
+        headers[displayKey] = {
+          value: value,
+          vr: entry.vr,
+          tag: entry.tag1
+        };
+      });
+
+      console.log('DICOM headers parsed successfully, total tags:', Object.keys(headers).length);
+      setRawDicomHeaders(headers);
+    } catch (error: any) {
+      console.error('Error loading raw DICOM headers:', error);
+      setRawHeadersError(error.message || 'Failed to load DICOM headers from file');
+    } finally {
+      setLoadingRawHeaders(false);
+    }
+  };
+
+  const handleOpenDicomDialog = (scan: XnatScan) => {
+    setDicomHeaderDialog(scan);
+    setRawDicomHeaders(null);
+    setRawHeadersError(null);
+    // Automatically load raw headers when opening
+    loadRawDicomHeaders(scan);
   };
 
   // Don't show hard error for scans - they might just not exist
@@ -219,9 +290,11 @@ export function Scans() {
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filteredScans.map((scan: any) => {
+            // Use experiment ID (not label) for snapshot URL
+            const experimentId = experimentData?.id || experiment;
             const snapshotUrl =
-              client && project && subject && experiment
-                ? client.getScanThumbnailUrl(project, subject, experiment, scan.id)
+              client && project && subject && experimentId
+                ? client.getScanThumbnailUrl(project, subject, experimentId, scan.id)
                 : null;
 
             return (
@@ -290,6 +363,14 @@ export function Scans() {
                         View
                       </button>
 
+                      <button
+                        onClick={() => handleOpenDicomDialog(scan)}
+                        className="inline-flex items-center text-xs font-medium text-purple-600 hover:text-purple-500"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Headers
+                      </button>
+
                       <button className="inline-flex items-center text-xs font-medium text-green-600 hover:text-green-500">
                         <Download className="h-3 w-3 mr-1" />
                         Download
@@ -341,6 +422,194 @@ export function Scans() {
                 {filteredScans.reduce((total: number, s: any) => total + (parseInt(s.frames) || 0), 0)}
               </div>
               <div className="text-sm text-gray-500">Total Frames</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DICOM Header Dialog */}
+      {dicomHeaderDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className={`bg-white rounded-lg shadow-xl overflow-hidden transition-all ${
+            isHeaderDialogMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-4xl w-full max-h-[85vh]'
+          }`}>
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">DICOM Header Information</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {dicomHeaderDialog.series_description || `Scan ${dicomHeaderDialog.id}`} • {dicomHeaderDialog.type}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsHeaderDialogMaximized(!isHeaderDialogMaximized)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                  title={isHeaderDialogMaximized ? 'Restore' : 'Maximize'}
+                >
+                  {isHeaderDialogMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={() => {
+                    setDicomHeaderDialog(null);
+                    setIsHeaderDialogMaximized(false);
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="overflow-y-auto" style={{ maxHeight: isHeaderDialogMaximized ? 'calc(100vh - 140px)' : 'calc(85vh - 140px)' }}>
+              {/* Basic Scan Info */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 pb-4">
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Scan ID</label>
+                  <p className="text-sm text-gray-900">{dicomHeaderDialog.id}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Type</label>
+                  <p className="text-sm text-gray-900">{dicomHeaderDialog.type || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Frames</label>
+                  <p className="text-sm text-gray-900">{dicomHeaderDialog.frames || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500">Quality</label>
+                  <p className="text-sm text-gray-900">{dicomHeaderDialog.quality || 'N/A'}</p>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="border-b border-gray-200 px-6">
+                <nav className="-mb-px flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab('metadata')}
+                    className={`${
+                      activeTab === 'metadata'
+                        ? 'border-purple-500 text-purple-600'
+                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                    } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors`}
+                  >
+                    XNAT Metadata
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('raw')}
+                    className={`${
+                      activeTab === 'raw'
+                        ? 'border-purple-500 text-purple-600'
+                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                    } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors`}
+                  >
+                    Raw DICOM Headers
+                    {loadingRawHeaders && <span className="ml-2 text-xs">(Loading...)</span>}
+                  </button>
+                </nav>
+              </div>
+
+              {/* Tab Content */}
+              <div className="p-6">
+                {activeTab === 'metadata' && (
+                  <div className="bg-white rounded border border-gray-200 p-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">XNAT Scan Metadata</h4>
+                    <table className="w-full font-mono text-xs">
+                      <tbody>
+                        {Object.entries(dicomHeaderDialog)
+                          .filter(([key]) => !['id', 'URI', 'xsiType'].includes(key))
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([key, value]) => (
+                            <tr key={key} className="border-b border-gray-100">
+                              <td className="text-gray-600 font-semibold py-2 pr-4 whitespace-nowrap align-top">
+                                {key}:
+                              </td>
+                              <td className="text-gray-900 py-2 break-words">
+                                {value !== null && value !== undefined
+                                  ? typeof value === 'object'
+                                    ? JSON.stringify(value)
+                                    : String(value)
+                                  : 'N/A'}
+                              </td>
+                            </tr>
+                          ))
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {activeTab === 'raw' && (
+                  <div className="bg-white rounded border border-gray-200 p-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Raw DICOM File Headers</h4>
+
+                    {loadingRawHeaders && (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-sm text-gray-500">Loading DICOM file...</div>
+                      </div>
+                    )}
+
+                    {rawHeadersError && (
+                      <div className="bg-red-50 border border-red-200 rounded p-3">
+                        <p className="text-sm text-red-700">{rawHeadersError}</p>
+                      </div>
+                    )}
+
+                    {rawDicomHeaders && !loadingRawHeaders && (
+                      <table className="w-full font-mono text-xs">
+                        <thead>
+                          <tr className="border-b-2 border-gray-300">
+                            <th className="text-left py-2 pr-4 text-gray-700 font-semibold">DICOM Tag</th>
+                            <th className="text-left py-2 pr-4 text-gray-700 font-semibold">VR</th>
+                            <th className="text-left py-2 text-gray-700 font-semibold">Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(rawDicomHeaders)
+                            .sort(([a], [b]) => {
+                              // Sort by tag number if available
+                              const tagA = (rawDicomHeaders[a] as any).tag || a;
+                              const tagB = (rawDicomHeaders[b] as any).tag || b;
+                              return tagA.localeCompare(tagB);
+                            })
+                            .map(([key, valueObj]) => {
+                              const data = valueObj as { value: string; vr: string; tag: string };
+                              return (
+                                <tr key={key} className="border-b border-gray-100 hover:bg-gray-50">
+                                  <td className="text-gray-600 font-semibold py-2 pr-4 align-top">
+                                    {key}
+                                  </td>
+                                  <td className="text-blue-600 py-2 pr-4 align-top">
+                                    {data.vr}
+                                  </td>
+                                  <td className="text-gray-900 py-2 break-words">
+                                    {data.value}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          }
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => {
+                  setDicomHeaderDialog(null);
+                  setIsHeaderDialogMaximized(false);
+                }}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

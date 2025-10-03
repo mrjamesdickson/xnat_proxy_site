@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
-  FileImage, 
-  Search, 
+import {
+  FileImage,
+  Search,
   Filter,
   Calendar,
   User,
@@ -14,10 +14,13 @@ import {
   Zap,
   Camera,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Grid3x3,
+  List
 } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
+import { ScanSnapshot } from './ScanSnapshot';
 
 export function Experiments() {
   const { client } = useXnat();
@@ -31,6 +34,7 @@ export function Experiments() {
   const [selectedModality, setSelectedModality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -90,7 +94,8 @@ export function Experiments() {
   };
 
   const getExperimentId = (experiment: any) => {
-    return experiment.id || experiment.label;
+    // XNAT returns ID in uppercase
+    return experiment.id || experiment.ID || experiment.label;
   };
 
   const { data: experiments, isLoading, error } = useQuery({
@@ -248,6 +253,34 @@ export function Experiments() {
             Browse and manage imaging experiments and sessions.
           </p>
         </div>
+        <div className="mt-4 sm:mt-0">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                viewMode === 'grid'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -335,7 +368,65 @@ export function Experiments() {
             }
           </p>
         </div>
+      ) : viewMode === 'table' ? (
+        /* Table View */
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-300">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">Label</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Subject</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Modality</th>
+                <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Date</th>
+                <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {paginatedExperiments.map((experiment) => {
+                const subjectId = routeSubject || getSubjectId(experiment);
+                const projectId = routeProject || experiment.project;
+                const experimentId = getExperimentId(experiment);
+
+                return (
+                  <tr key={experimentId} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
+                      {experiment.label || experimentId}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{projectId}</td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{subjectId}</td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      {experiment.modality && (
+                        <span className={clsx(
+                          'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                          getModalityColor(experiment.modality)
+                        )}>
+                          {experiment.modality.toUpperCase()}
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      {experiment.date ? new Date(experiment.date).toLocaleDateString() : 'N/A'}
+                    </td>
+                    <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                      <Link
+                        to={`/experiments/${projectId}/${subjectId}/${experiment.label || experimentId}`}
+                        className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" />
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : (
+        /* Grid View */
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {paginatedExperiments.map((experiment) => {
             const ModalityIcon = getModalityIcon(experiment.modality);
@@ -343,12 +434,23 @@ export function Experiments() {
             const subjectId = routeSubject || getSubjectId(experiment);
             const projectId = routeProject || experiment.project;
             const experimentId = getExperimentId(experiment);
-            
+
             return (
               <div
                 key={experimentId}
-                className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow"
+                className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow overflow-hidden"
               >
+                <Link
+                  to={`/experiments/${projectId}/${subjectId}/${experiment.label || experimentId}`}
+                  className="block hover:opacity-90 transition-opacity"
+                >
+                  <ExperimentSnapshotPreview
+                    client={client}
+                    projectId={projectId}
+                    subjectId={subjectId}
+                    experimentId={experimentId}
+                  />
+                </Link>
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center">
@@ -598,5 +700,52 @@ export function Experiments() {
         </div>
       )}
     </div>
+  );
+}
+
+// Component to fetch and display the first scan snapshot for an experiment
+function ExperimentSnapshotPreview({
+  client,
+  projectId,
+  subjectId,
+  experimentId
+}: {
+  client: any;
+  projectId: string;
+  subjectId: string;
+  experimentId: string;
+}) {
+  const { data: scans } = useQuery({
+    queryKey: ['experiment-scans', projectId, subjectId, experimentId],
+    queryFn: async () => {
+      if (!client) return [];
+      try {
+        const result = await client.getScans(projectId, subjectId, experimentId);
+        return result || [];
+      } catch (error) {
+        console.error('Error fetching scans for experiment:', experimentId, error);
+        return [];
+      }
+    },
+    enabled: !!client && !!projectId && !!subjectId && !!experimentId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  const firstScan = scans && scans.length > 0 ? scans[0] : null;
+
+  // Normalize scan id (XNAT returns ID uppercase)
+  const scanId = firstScan ? (firstScan.id || firstScan.ID) : null;
+
+  const snapshotUrl = scanId && client
+    ? client.getScanThumbnailUrl(projectId, subjectId, experimentId, scanId)
+    : null;
+
+  return (
+    <ScanSnapshot
+      snapshotUrl={snapshotUrl}
+      alt={`Snapshot for ${experimentId}`}
+      containerClassName="w-full aspect-square"
+      showLabel={false}
+    />
   );
 }

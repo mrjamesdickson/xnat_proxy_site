@@ -40,7 +40,11 @@ export function ExperimentDetail() {
 
   const { data: experimentData, isLoading, error } = useQuery({
     queryKey: ['experiment', project, subject, experiment],
-    queryFn: () => client?.getExperiment(project!, subject!, experiment!) || null,
+    queryFn: async () => {
+      const result = await client?.getExperiment(project!, subject!, experiment!);
+      console.log('📊 Experiment data fetched:', result);
+      return result || null;
+    },
     enabled: !!client && !!project && !!subject && !!experiment,
   });
 
@@ -205,9 +209,11 @@ export function ExperimentDetail() {
             {scans && scans.length > 0 ? (
               <div className="space-y-3">
                 {scans.slice(0, 5).map((scan: any) => {
+                  // Use experiment ID (not label) for snapshot URL
+                  const experimentId = experimentData?.id || experiment;
                   const snapshotUrl =
-                    client && project && subject && experiment
-                      ? client.getScanThumbnailUrl(project, subject, experiment, scan.id)
+                    client && project && subject && experimentId
+                      ? client.getScanThumbnailUrl(project, subject, experimentId, scan.id)
                       : null;
 
                   return (

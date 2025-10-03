@@ -20,10 +20,30 @@ export function ScanSnapshot({
   showLabel = false,
 }: ScanSnapshotProps) {
   const [hasError, setHasError] = useState(!snapshotUrl);
+  const [isLoading, setIsLoading] = useState(!!snapshotUrl);
 
   useEffect(() => {
     setHasError(!snapshotUrl);
+    setIsLoading(!!snapshotUrl);
+    if (snapshotUrl) {
+      console.log('📸 Scan snapshot URL:', snapshotUrl);
+    }
   }, [snapshotUrl]);
+
+  const handleLoad = () => {
+    setIsLoading(false);
+  };
+
+  const handleError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.error('❌ Snapshot failed to load:', {
+      url: snapshotUrl,
+      error: e,
+      naturalWidth: (e.target as HTMLImageElement).naturalWidth,
+      naturalHeight: (e.target as HTMLImageElement).naturalHeight
+    });
+    setHasError(true);
+    setIsLoading(false);
+  };
 
   return (
     <div
@@ -33,13 +53,21 @@ export function ScanSnapshot({
       )}
     >
       {snapshotUrl && !hasError ? (
-        <img
-          src={snapshotUrl}
-          alt={alt}
-          className={clsx('h-full w-full object-cover', imageClassName)}
-          loading="lazy"
-          onError={() => setHasError(true)}
-        />
+        <>
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+              <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-300 border-t-blue-600"></div>
+            </div>
+          )}
+          <img
+            src={snapshotUrl}
+            alt={alt}
+            className={clsx('h-full w-full object-cover', imageClassName, isLoading && 'opacity-0')}
+            loading="lazy"
+            onLoad={handleLoad}
+            onError={handleError}
+          />
+        </>
       ) : (
         <div className="flex flex-col items-center justify-center text-gray-400">
           <ImageIcon className={clsx('h-10 w-10', iconClassName)} />

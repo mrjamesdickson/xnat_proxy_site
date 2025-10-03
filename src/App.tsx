@@ -19,6 +19,15 @@ import { Upload } from './components/Upload';
 import { Search } from './components/Search';
 import { Settings } from './components/Settings';
 import { AdminUsers } from './components/AdminUsers';
+import { SiteAdministration } from './components/SiteAdministration';
+import { AdminGroups } from './components/AdminGroups';
+import { AdminDataTypes } from './components/AdminDataTypes';
+import { AdminEmail } from './components/AdminEmail';
+import { AdminAutomation } from './components/AdminAutomation';
+import { AdminStoredSearches } from './components/AdminStoredSearches';
+import { AdminPlugins } from './components/AdminPlugins';
+import { AdminEventService } from './components/AdminEventService';
+import { AdminTasks } from './components/AdminTasks';
 import { ApiExplorer } from './components/ApiExplorer';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Prearchive } from './components/Prearchive';
@@ -63,7 +72,16 @@ function AppContent() {
         <Route path="/upload/compressed" element={<CompressedUploader />} />
         <Route path="/search" element={<Search />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/admin" element={<SiteAdministration />} />
         <Route path="/admin/users" element={<AdminUsers />} />
+        <Route path="/admin/groups" element={<AdminGroups />} />
+        <Route path="/admin/data-types" element={<AdminDataTypes />} />
+        <Route path="/admin/email" element={<AdminEmail />} />
+        <Route path="/admin/automation" element={<AdminAutomation />} />
+        <Route path="/admin/stored-searches" element={<AdminStoredSearches />} />
+        <Route path="/admin/plugins" element={<AdminPlugins />} />
+        <Route path="/admin/event-service" element={<AdminEventService />} />
+        <Route path="/admin/tasks" element={<AdminTasks />} />
         <Route path="/api" element={<ApiExplorer />} />
       </Routes>
     </Layout>

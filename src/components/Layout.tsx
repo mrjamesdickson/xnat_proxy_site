@@ -68,7 +68,22 @@ const navigation = [
   },
   { name: 'Search', href: '/search', icon: Search },
   { name: 'API Explorer', href: '/api', icon: BookOpen },
-  { name: 'Admin', href: '/admin/users', icon: ShieldCheck },
+  {
+    name: 'Administer',
+    icon: ShieldCheck,
+    submenu: [
+      { name: 'Site Administration', href: '/admin', icon: Settings },
+      { name: 'Users', href: '/admin/users', icon: Users },
+      { name: 'Groups', href: '/admin/groups', icon: Users },
+      { name: 'Data Types', href: '/admin/data-types', icon: FileImage },
+      { name: 'Send Email', href: '/admin/email', icon: Activity },
+      { name: 'Automation', href: '/admin/automation', icon: Activity },
+      { name: 'Stored Searches', href: '/admin/stored-searches', icon: Search },
+      { name: 'Plugin Settings', href: '/admin/plugins', icon: Settings },
+      { name: 'Event Service', href: '/admin/event-service', icon: Activity },
+      { name: 'XNAT Task Settings', href: '/admin/tasks', icon: Activity }
+    ]
+  },
 ];
 
 const getProjectId = (project: XnatProject | XnatProjectAccess): string =>
