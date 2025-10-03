@@ -559,6 +559,16 @@ export class XnatApiClient {
     return base.endsWith('/') ? base.slice(0, -1) : base;
   }
 
+  getBaseUrl(): string {
+    // Public method to get base URL for debugging
+    const baseUrl = this.resolveBaseUrl();
+    // If in dev mode and using proxy, return the actual XNAT server URL for curl commands
+    if (baseUrl === '/api/xnat') {
+      return this.config.baseURL || 'http://demo02.xnatworks.io';
+    }
+    return baseUrl;
+  }
+
   private buildUrl(path: string): string {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const base = this.resolveBaseUrl();
@@ -932,7 +942,12 @@ export class XnatApiClient {
     const response = await this.client.get(`/data/projects/${projectId}/subjects/${subjectId}`, {
       params: { format: 'json' }
     });
-    return response.data.items[0].data_fields;
+    const data = response.data.items[0].data_fields;
+    // Normalize: ensure 'id' field exists (XNAT uses 'ID' uppercase)
+    return {
+      ...data,
+      id: data.id || data.ID
+    };
   }
 
   async createSubject(projectId: string, subject: Partial<XnatSubject>): Promise<XnatSubject> {
@@ -984,7 +999,12 @@ export class XnatApiClient {
     const response = await this.client.get(`/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`, {
       params: { format: 'json' }
     });
-    return response.data.items?.[0]?.data_fields || response.data;
+    const data = response.data.items?.[0]?.data_fields || response.data;
+    // Normalize: ensure 'id' field exists (XNAT uses 'ID' uppercase)
+    return {
+      ...data,
+      id: data.id || data.ID
+    };
   }
 
   async createExperiment(projectId: string, subjectId: string, experiment: Partial<XnatExperiment>): Promise<XnatExperiment> {
@@ -1012,17 +1032,134 @@ export class XnatApiClient {
     const response = await this.client.get(`/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans`, {
       params: { format: 'json' }
     });
-    return response.data.ResultSet?.Result || [];
+    const scans = response.data.ResultSet?.Result || [];
+    // Normalize: XNAT returns 'ID' but our interface uses 'id'
+    return scans.map((scan: any) => ({
+      ...scan,
+      id: scan.id || scan.ID
+    }));
   }
 
   getScanThumbnailUrl(projectId: string, subjectId: string, experimentId: string, scanId: string): string {
-    const path = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}/thumbnail`;
+    // Use the correct XAPI endpoint for scan snapshots
+    const path = `/xapi/projects/${projectId}/experiments/${experimentId}/scan/${scanId}/snapshot`;
     return this.buildUrl(path);
+  }
+
+  getDicomHeaderUrl(projectId: string, subjectId: string, experimentId: string, scanId: string): string {
+    // Use standard XNAT data API to get scan metadata with DICOM parameters (for archived scans)
+    const path = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}`;
+    return this.buildUrl(path + '?format=json');
+  }
+
+  getPrearchiveDicomHeaderUrl(project: string, timestamp: string, subject: string, scanId: string): string {
+    // For prearchive scans, we'll need to fetch a DICOM file and parse it client-side
+    // This returns the base path for the scan
+    const path = `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}`;
+    return this.buildUrl(path + '?format=json');
   }
 
   async getScan(projectId: string, subjectId: string, experimentId: string, scanId: string): Promise<XnatScan> {
     const response = await this.client.get(`/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}`);
     return response.data.items[0].data_fields;
+  }
+
+  async getScanFiles(projectId: string, subjectId: string, experimentId: string, scanId: string): Promise<Array<{ Name: string; Size: string }>> {
+    try {
+      const url = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}/resources/DICOM/files`;
+      const config = { params: { format: 'json' } };
+
+      console.log('🌐 API Request:', {
+        method: 'GET',
+        url: url,
+        params: config.params,
+        baseURL: this.client.defaults.baseURL,
+        fullUrl: `${this.client.defaults.baseURL}${url}?format=json`
+      });
+
+      const response = await this.client.get(url, config);
+
+      console.log('✅ API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        dataSize: JSON.stringify(response.data).length,
+        resultCount: response.data?.ResultSet?.Result?.length || 0
+      });
+
+      const results = response.data?.ResultSet?.Result || [];
+      return Array.isArray(results) ? results : [];
+    } catch (error: any) {
+      console.error('❌ Error fetching scan files:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        url: error.config?.url,
+        method: error.config?.method
+      });
+      return [];
+    }
+  }
+
+  async getDicomDump(
+    projectId: string,
+    experimentId: string,
+    scanId: string
+  ): Promise<Array<{ tag1: string; tag2: string; vr: string; value: string; desc: string }>> {
+    try {
+      const src = `/archive/projects/${projectId}/experiments/${experimentId}/scans/${scanId}`;
+      const response = await this.client.get('/REST/services/dicomdump', {
+        params: { src, format: 'json' }
+      });
+      return response.data?.ResultSet?.Result || [];
+    } catch (error) {
+      console.error('Error fetching DICOM dump:', error);
+      return [];
+    }
+  }
+
+  async getScanFile(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    scanId: string,
+    resource: string,
+    fileName: string
+  ): Promise<ArrayBuffer> {
+    const url = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}/resources/${resource}/files/${fileName}`;
+    const config = { responseType: 'arraybuffer' as const };
+
+    console.log('🌐 API Request (DICOM File):', {
+      method: 'GET',
+      url: url,
+      fileName: fileName,
+      baseURL: this.client.defaults.baseURL,
+      fullUrl: `${this.client.defaults.baseURL}${url}`,
+      responseType: 'arraybuffer'
+    });
+
+    try {
+      const response = await this.client.get(url, config);
+
+      console.log('✅ API Response (DICOM File):', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType: response.headers['content-type'],
+        size: response.data.byteLength,
+        sizeKB: (response.data.byteLength / 1024).toFixed(2) + ' KB'
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Error fetching DICOM file:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        url: error.config?.url,
+        method: error.config?.method,
+        responseData: error.response?.data
+      });
+      throw error;
+    }
   }
 
   async updateScan(projectId: string, subjectId: string, experimentId: string, scanId: string, scan: Partial<XnatScan>): Promise<XnatScan> {
@@ -1785,9 +1922,99 @@ export class XnatApiClient {
       );
 
       const results = response.data?.ResultSet?.Result || [];
-      return Array.isArray(results) ? results : [];
+      // Map XNAT response (Name/Size) to lowercase (name/size)
+      return Array.isArray(results) ? results.map((file: any) => ({
+        name: file.Name || file.name,
+        size: parseInt(file.Size || file.size || '0', 10)
+      })) : [];
     } catch (error) {
       console.error('Error fetching prearchive scan files:', error);
+      return [];
+    }
+  }
+
+  async validateArchive(
+    project: string,
+    timestamp: string,
+    subject: string,
+    options?: {
+      newProject?: string;
+      newSubject?: string;
+      newSession?: string;
+      overwrite?: string;
+    }
+  ): Promise<any> {
+    try {
+      const src = `/prearchive/projects/${project}/${timestamp}/${subject}`;
+
+      const params = new URLSearchParams();
+      params.append('src', src);
+
+      if (options?.newProject) {
+        params.append('project', options.newProject);
+      }
+      if (options?.newSubject) {
+        params.append('subject', options.newSubject);
+      }
+      if (options?.newSession) {
+        params.append('session', options.newSession);
+      }
+      if (options?.overwrite) {
+        params.append('overwrite', options.overwrite);
+      }
+
+      const response = await this.client.post('/REST/services/validate-archive', params.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        params: {
+          format: 'json'
+        }
+      });
+
+      return response.data;
+    } catch (error) {
+      console.error('Error validating archive:', error);
+      throw error;
+    }
+  }
+
+  async getPrearchiveLogs(
+    project: string,
+    timestamp: string,
+    subject: string
+  ): Promise<any> {
+    try {
+      const response = await this.client.get(
+        `/data/prearchive/projects/${project}/${timestamp}/${subject}/logs`,
+        {
+          params: {
+            format: 'json'
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching prearchive logs:', error);
+      throw error;
+    }
+  }
+
+  async getEditableProjects(): Promise<XnatProject[]> {
+    try {
+      const response = await this.client.get('/data/projects', {
+        params: {
+          format: 'json',
+          restrict: 'edit',
+          columns: 'ID,name,description'
+        }
+      });
+
+      const results = response.data?.ResultSet?.Result || [];
+      return Array.isArray(results) ? results : [];
+    } catch (error) {
+      console.error('Error fetching editable projects:', error);
       return [];
     }
   }
@@ -1802,11 +2029,39 @@ export class XnatApiClient {
     scanId: string,
     fileName: string
   ): Promise<ArrayBuffer> {
-    const response = await this.client.get(
-      `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}/resources/DICOM/files/${encodeURIComponent(fileName)}`,
-      { responseType: 'arraybuffer' }
-    );
-    return response.data;
+    try {
+      // Try without encoding first (XNAT filenames with dots work better this way)
+      const url = `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}/resources/DICOM/files/${fileName}`;
+      console.log('Fetching DICOM file from URL:', url);
+      console.log('BaseURL:', this.client.defaults.baseURL);
+
+      const response = await this.client.get(url, { responseType: 'arraybuffer' });
+      console.log('DICOM file response status:', response.status, 'size:', response.data.byteLength);
+      console.log('Response headers:', response.headers);
+
+      // Check if we got HTML error page instead of binary data
+      if (response.headers['content-type']?.includes('text/html')) {
+        console.error('Received HTML instead of binary data!');
+        const text = new TextDecoder().decode(response.data);
+        console.error('Response text:', text.substring(0, 500));
+        throw new Error('Server returned HTML error page instead of DICOM file');
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching DICOM file, trying with URI encoding...', error);
+      // Try with encoding if that fails
+      try {
+        const response = await this.client.get(
+          `/data/prearchive/projects/${project}/${timestamp}/${subject}/scans/${scanId}/resources/DICOM/files/${encodeURIComponent(fileName)}`,
+          { responseType: 'arraybuffer' }
+        );
+        return response.data;
+      } catch (error2) {
+        console.error('Error fetching DICOM file with encoded path', error2);
+        throw error; // throw the original error
+      }
+    }
   }
 
   // Upload file to cache

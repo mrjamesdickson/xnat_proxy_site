@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
-  Users, 
-  Search, 
+import {
+  Users,
+  Search,
   Filter,
   User,
   FileImage,
   Eye,
   Plus,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Grid3x3,
+  List,
+  Clock
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
@@ -22,6 +25,7 @@ export function Subjects() {
   const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || '');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   const getSubjectId = (subject: any) => {
     return subject.id || subject.ID || subject.subject_id || subject.subject_ID || subject.label;
@@ -102,7 +106,33 @@ export function Subjects() {
             Browse and manage subjects across your projects.
           </p>
         </div>
-        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <div className="mt-4 sm:ml-16 sm:mt-0 flex items-center gap-3">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                viewMode === 'grid'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
           <button
             type="button"
             className="block rounded-md bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
@@ -186,25 +216,25 @@ export function Subjects() {
       </div>
 
       {/* Subjects Table */}
-      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
-        {isLoading ? (
-          <div className="p-8">
-            <div className="animate-pulse space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center space-x-4">
-                  <div className="h-10 w-10 bg-gray-200 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-1/4" />
-                    <div className="h-3 bg-gray-200 rounded w-1/3" />
-                  </div>
-                  <div className="h-4 bg-gray-200 rounded w-16" />
-                  <div className="h-4 bg-gray-200 rounded w-20" />
-                  <div className="h-4 bg-gray-200 rounded w-12" />
+      {isLoading ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden p-8">
+          <div className="animate-pulse space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-4">
+                <div className="h-10 w-10 bg-gray-200 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-1/4" />
+                  <div className="h-3 bg-gray-200 rounded w-1/3" />
                 </div>
-              ))}
-            </div>
+                <div className="h-4 bg-gray-200 rounded w-16" />
+                <div className="h-4 bg-gray-200 rounded w-20" />
+                <div className="h-4 bg-gray-200 rounded w-12" />
+              </div>
+            ))}
           </div>
-        ) : filteredSubjects.length === 0 ? (
+        </div>
+      ) : filteredSubjects.length === 0 ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
           <div className="text-center py-12">
             <Users className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">
@@ -217,7 +247,10 @@ export function Subjects() {
               }
             </p>
           </div>
-        ) : (
+        </div>
+      ) : viewMode === 'table' ? (
+        /* Table View */
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -322,8 +355,71 @@ export function Subjects() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+          /* Grid View */
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedSubjects.map((subject) => {
+              const subjectId = getSubjectId(subject);
+              return (
+                <div key={subjectId} className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6">
+                  <div className="flex items-center mb-4">
+                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                      <User className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-sm font-medium text-gray-900">
+                        {subject.label || subjectId}
+                      </h3>
+                      <p className="text-xs text-gray-500">ID: {subjectId}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <FileImage className="h-4 w-4 mr-2 text-gray-400" />
+                      <span className="truncate">{subject.project}</span>
+                    </div>
+
+                    {(subject.gender || subject.age) && (
+                      <div className="text-sm text-gray-600">
+                        <span className="font-medium">Demographics:</span>{' '}
+                        {subject.gender && subject.gender}
+                        {subject.age && `, ${subject.age}y`}
+                      </div>
+                    )}
+
+                    {subject.group && (
+                      <div className="text-sm text-gray-600">
+                        <span className="font-medium">Group:</span> {subject.group}
+                      </div>
+                    )}
+
+                    {subject.insert_date && (
+                      <div className="text-sm text-gray-500">
+                        <Clock className="h-4 w-4 inline mr-1" />
+                        {new Date(subject.insert_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                    <span className="text-sm text-gray-500">
+                      {subject.num_experiments || 0} experiments
+                    </span>
+                    <Link
+                      to={`/subjects/${subject.project}/${subjectId}`}
+                      className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+      )}
 
       {/* Pagination Controls */}
       {totalPages > 1 && (

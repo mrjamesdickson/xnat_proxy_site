@@ -8,7 +8,9 @@ import {
   CheckCircle,
   Clock,
   Cpu,
+  Grid3x3,
   HardDrive,
+  List,
   MonitorSpeaker,
   Pause,
   Play,
@@ -209,6 +211,7 @@ export function Processing() {
   const [dismissedCallouts, setDismissedCallouts] = useState({ active: false, failed: false });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -465,6 +468,32 @@ export function Processing() {
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                  viewMode === 'grid'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                )}
+              >
+                <Grid3x3 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                  viewMode === 'table'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
             {isAdminUser && (
               <button
                 type="button"
@@ -575,7 +604,7 @@ export function Processing() {
             <div className="rounded-md border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-600">
               No workflows were found for the selected time period.
             </div>
-          ) : (
+          ) : viewMode === 'table' ? (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -651,6 +680,130 @@ export function Processing() {
               </table>
               {sortedWorkflows.length > 0 && (
                 <div className="flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    Showing {paginationSummary.start.toLocaleString()}-
+                    {paginationSummary.end.toLocaleString()} of {sortedWorkflows.length.toLocaleString()} workflows
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                    <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
+                      Page Size
+                      <select
+                        className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value={pageSize}
+                        onChange={(event) => setPageSize(Number(event.target.value))}
+                      >
+                        {[25, 50, 100].map((size) => (
+                          <option key={size} value={size}>
+                            {size} per page
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                        disabled={safePage <= 1}
+                        className={clsx(
+                          'rounded-md border px-3 py-1 text-sm font-medium shadow-sm transition-colors',
+                          safePage <= 1
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                        )}
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs uppercase tracking-wide text-gray-500">
+                        Page {safePage.toLocaleString()} of {totalPages.toLocaleString()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                        disabled={safePage >= totalPages}
+                        className={clsx(
+                          'rounded-md border px-3 py-1 text-sm font-medium shadow-sm transition-colors',
+                          safePage >= totalPages
+                            ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                        )}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Grid View */
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedWorkflows.map((workflow) => {
+                  const status = getWorkflowStatus(workflow);
+                  const launchDate = getWorkflowLaunchDate(workflow);
+                  const percent = getWorkflowPercent(workflow);
+                  const details = getWorkflowDetails(workflow);
+                  const project = getWorkflowProject(workflow);
+                  const step = getWorkflowStep(workflow);
+                  const label = getWorkflowLabel(workflow);
+                  const workflowKey = `${workflow.wfid ?? workflow.id ?? label}`;
+                  const workflowName = getWorkflowName(workflow);
+                  const workflowUser = getWorkflowUser(workflow) || '—';
+
+                  return (
+                    <div key={workflowKey} className="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">{label || '—'}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{project || '—'}</div>
+                        </div>
+                        <span className={clsx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold shrink-0 ml-2', getStatusPillColor(status))}>
+                          {getStatusIcon(status)}
+                          {status || 'Unknown'}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 mb-3">
+                        <div className="text-sm font-medium text-gray-900">{workflowName}</div>
+
+                        {details && (
+                          <div className="text-xs text-gray-500 line-clamp-2" title={details}>
+                            {details}
+                          </div>
+                        )}
+
+                        <div className="flex items-center text-xs text-gray-500">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {formatDate(launchDate)}
+                        </div>
+
+                        <div className="text-xs text-gray-500">
+                          User: {workflowUser}
+                        </div>
+                      </div>
+
+                      {percent !== undefined ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span className="truncate">{step || 'In progress'}</span>
+                            <span className="shrink-0 ml-2">{percent.toFixed(0)}%</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-gray-200">
+                            <div
+                              className="h-2 rounded-full bg-blue-500"
+                              style={{ width: `${Math.min(percent, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : step ? (
+                        <div className="text-xs text-gray-500">{step}</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              {sortedWorkflows.length > 0 && (
+                <div className="flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-3 mt-4 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     Showing {paginationSummary.start.toLocaleString()}-
                     {paginationSummary.end.toLocaleString()} of {sortedWorkflows.length.toLocaleString()} workflows
