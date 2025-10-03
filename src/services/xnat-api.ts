@@ -1295,9 +1295,27 @@ export class XnatApiClient {
   }
 
   async getCurrentUser(): Promise<XnatUser> {
+    // First, get the current username from the config
+    const username = this.config.username;
+
+    if (username) {
+      // Fetch the full user details using the username
+      const response = await this.client.get(`/data/user/${username}`, {
+        params: { format: 'json' }
+      });
+      return response.data;
+    }
+
+    // Fallback: try to get it from /data/user (returns list of usernames)
     const response = await this.client.get('/data/user', {
       params: { format: 'json' }
     });
+
+    // If we get an array, it's a list of users, not the current user
+    if (Array.isArray(response.data)) {
+      throw new Error('Unable to determine current user');
+    }
+
     return response.data;
   }
 

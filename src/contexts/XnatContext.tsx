@@ -129,6 +129,7 @@ export function XnatProvider({ children }: XnatProviderProps) {
 
       const configWithSession = {
         baseURL: loginConfig.baseURL,
+        username,
         jsessionid,
       };
 
@@ -140,7 +141,7 @@ export function XnatProvider({ children }: XnatProviderProps) {
       setCurrentUser(user);
       setIsAuthenticated(true);
 
-      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify({ baseURL: loginConfig.baseURL }));
+      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify({ baseURL: loginConfig.baseURL, username }));
       localStorage.setItem(STORAGE_KEYS.JSESSIONID, jsessionid);
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     } catch (error) {
