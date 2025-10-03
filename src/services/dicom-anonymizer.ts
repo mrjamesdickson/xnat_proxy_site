@@ -258,6 +258,7 @@ export class DicomAnonymizer {
       'ClinicalTrialSubjectReadingID': '00120042',
       'ClinicalTrialTimePointID': '00120050',
       'ClinicalTrialTimePointDescription': '00120051',
+      'DeidentificationMethod': '00120063',
     };
 
     // Check if it's a naturalized name
@@ -272,8 +273,8 @@ export class DicomAnonymizer {
       return cleaned.toUpperCase();
     }
 
-    // Unknown format - return as is
-    return tag;
+    // Unknown format - return placeholder
+    return '00000000';
   }
 
   /**
