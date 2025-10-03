@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
+import {
   ArrowLeft,
   FileImage,
   Download,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
+import { ScanSnapshot } from './ScanSnapshot';
 
 export function Scans() {
   const { project, subject, experiment } = useParams<{
@@ -217,79 +218,93 @@ export function Scans() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredScans.map((scan: any) => (
-            <div
-              key={scan.id}
-              className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow"
-            >
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center">
-                    <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <ImageIcon className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {scan.series_description || `Scan ${scan.id}`}
-                      </h3>
-                      <p className="text-xs text-gray-500">{scan.id}</p>
-                    </div>
-                  </div>
-                  
-                  {scan.quality && (
-                    <span className={clsx(
-                      'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
-                      getQualityColor(scan.quality)
-                    )}>
-                      <Activity className="h-3 w-3 mr-1" />
-                      {scan.quality}
-                    </span>
-                  )}
-                </div>
+          {filteredScans.map((scan: any) => {
+            const snapshotUrl =
+              client && project && subject && experiment
+                ? client.getScanThumbnailUrl(project, subject, experiment, scan.id)
+                : null;
 
-                <div className="space-y-2 mb-4">
-                  {scan.type && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <FileImage className="h-4 w-4 mr-2 text-gray-400" />
-                      <span className="truncate">{scan.type}</span>
-                    </div>
-                  )}
-                  
-                  {scan.frames && (
-                    <div className="flex items-center text-sm text-gray-600">
-                      <HardDrive className="h-4 w-4 mr-2 text-gray-400" />
-                      <span>{scan.frames} frames</span>
-                    </div>
-                  )}
-                  
-                  {scan.note && (
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">Note:</span> {scan.note}
-                    </div>
-                  )}
-                </div>
+            return (
+              <div
+                key={scan.id}
+                className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow"
+              >
+                <div className="p-6">
+                  <ScanSnapshot
+                    snapshotUrl={snapshotUrl}
+                    alt={`Snapshot of ${scan.series_description || `Scan ${scan.id}`}`}
+                    containerClassName="w-full h-40 mb-4"
+                    showLabel
+                  />
 
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <button className="inline-flex items-center text-xs font-medium text-blue-600 hover:text-blue-500">
-                      <Eye className="h-3 w-3 mr-1" />
-                      View
-                    </button>
-                    
-                    <button className="inline-flex items-center text-xs font-medium text-green-600 hover:text-green-500">
-                      <Download className="h-3 w-3 mr-1" />
-                      Download
-                    </button>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center">
+                      <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <ImageIcon className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-gray-900 truncate">
+                          {scan.series_description || `Scan ${scan.id}`}
+                        </h3>
+                        <p className="text-xs text-gray-500">{scan.id}</p>
+                      </div>
+                    </div>
+
+                    {scan.quality && (
+                      <span className={clsx(
+                        'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                        getQualityColor(scan.quality)
+                      )}>
+                        <Activity className="h-3 w-3 mr-1" />
+                        {scan.quality}
+                      </span>
+                    )}
                   </div>
-                  
-                  <div className="flex items-center text-xs text-gray-500">
-                    <Clock className="h-3 w-3 mr-1" />
-                    {scan.startTime || 'No time'}
+
+                  <div className="space-y-2 mb-4">
+                    {scan.type && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <FileImage className="h-4 w-4 mr-2 text-gray-400" />
+                        <span className="truncate">{scan.type}</span>
+                      </div>
+                    )}
+
+                    {scan.frames && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <HardDrive className="h-4 w-4 mr-2 text-gray-400" />
+                        <span>{scan.frames} frames</span>
+                      </div>
+                    )}
+
+                    {scan.note && (
+                      <div className="text-sm text-gray-600">
+                        <span className="font-medium">Note:</span> {scan.note}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <button className="inline-flex items-center text-xs font-medium text-blue-600 hover:text-blue-500">
+                        <Eye className="h-3 w-3 mr-1" />
+                        View
+                      </button>
+
+                      <button className="inline-flex items-center text-xs font-medium text-green-600 hover:text-green-500">
+                        <Download className="h-3 w-3 mr-1" />
+                        Download
+                      </button>
+                    </div>
+
+                    <div className="flex items-center text-xs text-gray-500">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {scan.startTime || 'No time'}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
