@@ -7,8 +7,17 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { THEME_OPTIONS, type ThemeMode } from './theme-types';
 
-type ThemeMode = 'light' | 'dark';
+const AVAILABLE_THEMES: ThemeMode[] = [...THEME_OPTIONS];
+
+const THEME_CLASS_MAP: Record<ThemeMode, string[]> = {
+  light: [],
+  dark: ['dark'],
+  ocean: ['theme-ocean'],
+  forest: ['theme-forest'],
+  midnight: ['dark', 'theme-midnight'],
+};
 
 interface ThemeContextValue {
   theme: ThemeMode;
@@ -19,6 +28,8 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 const STORAGE_KEY = 'xnat-theme';
+const ALL_THEME_CLASSES = Array.from(new Set(Object.values(THEME_CLASS_MAP).flat()));
+const THEME_SEQUENCE: ThemeMode[] = [...AVAILABLE_THEMES];
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -32,9 +43,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       return;
     }
 
-    const storedTheme = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-    if (storedTheme === 'dark' || storedTheme === 'light') {
-      setThemeState(storedTheme);
+    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+    if (storedTheme && AVAILABLE_THEMES.includes(storedTheme as ThemeMode)) {
+      setThemeState(storedTheme as ThemeMode);
       return;
     }
 
@@ -49,11 +60,16 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
 
     const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
+    if (ALL_THEME_CLASSES.length) {
+      root.classList.remove(...ALL_THEME_CLASSES);
     }
+
+    const classesToAdd = THEME_CLASS_MAP[theme];
+    if (classesToAdd.length) {
+      root.classList.add(...classesToAdd);
+    }
+
+    root.setAttribute('data-theme', theme);
 
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_KEY, theme);
@@ -61,11 +77,17 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, [theme]);
 
   const setTheme = useCallback((nextTheme: ThemeMode) => {
-    setThemeState(nextTheme);
+    if (AVAILABLE_THEMES.includes(nextTheme)) {
+      setThemeState(nextTheme);
+    }
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((previous) => (previous === 'dark' ? 'light' : 'dark'));
+    setThemeState((previous) => {
+      const currentIndex = THEME_SEQUENCE.indexOf(previous);
+      const nextIndex = (currentIndex + 1) % THEME_SEQUENCE.length;
+      return THEME_SEQUENCE[nextIndex];
+    });
   }, []);
 
   const value = useMemo<ThemeContextValue>(

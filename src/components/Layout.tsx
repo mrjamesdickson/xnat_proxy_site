@@ -30,10 +30,24 @@ import clsx from 'clsx';
 import { ChatWidget } from './ChatWidget';
 import type { XnatProject, XnatProjectAccess, XnatSavedSearch } from '../services/xnat-api';
 import { useTheme } from '../contexts/ThemeContext';
+import { THEME_OPTIONS, type ThemeMode } from '../contexts/theme-types';
 
 interface LayoutProps {
   children: ReactNode;
 }
+
+const themeLabels: Record<ThemeMode, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  ocean: 'Ocean Breeze',
+  forest: 'Forest Canopy',
+  midnight: 'Midnight Glow',
+};
+
+const themeOptions = THEME_OPTIONS.map((value) => ({
+  value,
+  label: themeLabels[value],
+}));
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -147,7 +161,7 @@ export function Layout({ children }: LayoutProps) {
   const busyNav = projectsQuery.isLoading || accessQuery.isLoading || savedSearchQuery.isLoading;
 
   const handleThemeChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    const nextTheme = event.target.value === 'dark' ? 'dark' : 'light';
+    const nextTheme = event.target.value as ThemeMode;
     setTheme(nextTheme);
   };
 
@@ -493,7 +507,7 @@ export function Layout({ children }: LayoutProps) {
                     htmlFor="theme-select"
                     className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-300"
                   >
-                    {theme === 'dark' ? (
+                    {theme === 'dark' || theme === 'midnight' ? (
                       <Moon className="h-4 w-4" />
                     ) : (
                       <Sun className="h-4 w-4" />
@@ -506,8 +520,11 @@ export function Layout({ children }: LayoutProps) {
                     onChange={handleThemeChange}
                     className="rounded-md border border-gray-200 bg-white py-1.5 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                   >
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
+                    {themeOptions.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -649,7 +666,7 @@ export function Layout({ children }: LayoutProps) {
                   htmlFor="mobile-theme-select"
                   className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300"
                 >
-                  {theme === 'dark' ? (
+                  {theme === 'dark' || theme === 'midnight' ? (
                     <Moon className="h-4 w-4" />
                   ) : (
                     <Sun className="h-4 w-4" />
@@ -662,8 +679,11 @@ export function Layout({ children }: LayoutProps) {
                   onChange={handleThemeChange}
                   className="w-full rounded-md border border-gray-200 bg-white py-2 pl-2 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 >
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
+                  {themeOptions.map(({ value, label }) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </nav>
