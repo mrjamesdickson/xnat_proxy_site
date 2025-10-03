@@ -553,6 +553,18 @@ export class XnatApiClient {
     return [];
   }
 
+  private resolveBaseUrl(): string {
+    const base = this.client.defaults.baseURL ?? this.config.baseURL ?? '';
+    if (!base) return '';
+    return base.endsWith('/') ? base.slice(0, -1) : base;
+  }
+
+  private buildUrl(path: string): string {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const base = this.resolveBaseUrl();
+    return base ? `${base}${normalizedPath}` : normalizedPath;
+  }
+
   private normalizeUserRecord(raw: UnknownRecord): XnatUser {
     const username = this.extractString(raw, ['username', 'login', 'LOGIN']) || '';
     const numericId = this.extractNumber(raw, ['xdat_user_id', 'id', 'ID', 'userId']);
@@ -1001,6 +1013,11 @@ export class XnatApiClient {
       params: { format: 'json' }
     });
     return response.data.ResultSet?.Result || [];
+  }
+
+  getScanThumbnailUrl(projectId: string, subjectId: string, experimentId: string, scanId: string): string {
+    const path = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/scans/${scanId}/thumbnail`;
+    return this.buildUrl(path);
   }
 
   async getScan(projectId: string, subjectId: string, experimentId: string, scanId: string): Promise<XnatScan> {

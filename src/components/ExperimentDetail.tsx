@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
+import {
   ArrowLeft,
   Calendar,
   User,
@@ -13,6 +13,7 @@ import {
   Eye,
   Monitor
 } from 'lucide-react';
+import { ScanSnapshot } from './ScanSnapshot';
 
 export function ExperimentDetail() {
   const { project, subject, experiment } = useParams<{
@@ -203,24 +204,36 @@ export function ExperimentDetail() {
             
             {scans && scans.length > 0 ? (
               <div className="space-y-3">
-                {scans.slice(0, 5).map((scan: any) => (
-                  <div key={scan.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center">
-                      <FileImage className="h-5 w-5 text-gray-400 mr-3" />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {scan.series_description || `Scan ${scan.id}`}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {scan.type} • {scan.quality}
+                {scans.slice(0, 5).map((scan: any) => {
+                  const snapshotUrl =
+                    client && project && subject && experiment
+                      ? client.getScanThumbnailUrl(project, subject, experiment, scan.id)
+                      : null;
+
+                  return (
+                    <div key={scan.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center min-w-0">
+                        <ScanSnapshot
+                          snapshotUrl={snapshotUrl}
+                          alt={`Snapshot of ${scan.series_description || `Scan ${scan.id}`}`}
+                          containerClassName="h-16 w-24 mr-3 flex-shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">
+                            {scan.series_description || `Scan ${scan.id}`}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {scan.type} • {scan.quality || 'Unknown quality'}
+                          </div>
                         </div>
                       </div>
+                      <div className="text-xs text-gray-500 text-right">
+                        <div>{scan.frames ? `${scan.frames} frames` : ''}</div>
+                        <div className="text-[10px] text-gray-400">{scan.id}</div>
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {scan.frames ? `${scan.frames} frames` : ''}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 
                 {scans.length > 5 && (
                   <div className="text-center pt-2">
