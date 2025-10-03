@@ -11,12 +11,33 @@
     color-scheme: dark;
   }
 
+  html.theme-ocean,
+  html.theme-forest {
+    color-scheme: light;
+  }
+
+  html.theme-midnight {
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-gray-50 text-gray-900 antialiased transition-colors duration-300;
   }
 
 html.dark body {
   @apply bg-slate-950 text-gray-100;
+}
+
+html.theme-ocean body {
+  @apply bg-gradient-to-br from-sky-50 via-white to-sky-100 text-slate-900;
+}
+
+html.theme-forest body {
+  @apply bg-gradient-to-br from-emerald-50 via-white to-lime-100 text-emerald-950;
+}
+
+html.theme-midnight body {
+  @apply bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-slate-100;
 }
 
 @layer utilities {
@@ -67,6 +88,153 @@ html.dark body {
 
   .dark .text-gray-500 {
     @apply text-gray-400;
+  }
+
+  html.theme-ocean .bg-white {
+    @apply bg-white/90 shadow-sm ring-1 ring-sky-200/60;
+  }
+
+  html.theme-ocean .bg-white\/80 {
+    @apply bg-white/70;
+  }
+
+  html.theme-ocean .bg-gray-50 {
+    @apply bg-sky-50/70;
+  }
+
+  html.theme-ocean .bg-gray-100 {
+    @apply bg-sky-100/70;
+  }
+
+  html.theme-ocean .border-gray-200 {
+    @apply border-sky-200/70;
+  }
+
+  html.theme-ocean .border-gray-300 {
+    @apply border-sky-300/60;
+  }
+
+  html.theme-ocean .divide-gray-200 {
+    @apply divide-sky-200/70;
+  }
+
+  html.theme-ocean .ring-gray-900\/5 {
+    @apply ring-sky-200/60;
+  }
+
+  html.theme-ocean .text-gray-900,
+  html.theme-ocean .text-gray-800 {
+    @apply text-slate-900;
+  }
+
+  html.theme-ocean .text-gray-700 {
+    @apply text-slate-700;
+  }
+
+  html.theme-ocean .text-gray-600 {
+    @apply text-slate-600;
+  }
+
+  html.theme-ocean .text-gray-500 {
+    @apply text-slate-500;
+  }
+
+  html.theme-forest .bg-white {
+    @apply bg-white/90 shadow-sm ring-1 ring-emerald-200/60;
+  }
+
+  html.theme-forest .bg-white\/80 {
+    @apply bg-white/70;
+  }
+
+  html.theme-forest .bg-gray-50 {
+    @apply bg-emerald-50/60;
+  }
+
+  html.theme-forest .bg-gray-100 {
+    @apply bg-emerald-100/60;
+  }
+
+  html.theme-forest .border-gray-200 {
+    @apply border-emerald-200/60;
+  }
+
+  html.theme-forest .border-gray-300 {
+    @apply border-emerald-300/60;
+  }
+
+  html.theme-forest .divide-gray-200 {
+    @apply divide-emerald-200/60;
+  }
+
+  html.theme-forest .ring-gray-900\/5 {
+    @apply ring-emerald-200/50;
+  }
+
+  html.theme-forest .text-gray-900,
+  html.theme-forest .text-gray-800 {
+    @apply text-emerald-950;
+  }
+
+  html.theme-forest .text-gray-700 {
+    @apply text-emerald-800;
+  }
+
+  html.theme-forest .text-gray-600 {
+    @apply text-emerald-700;
+  }
+
+  html.theme-forest .text-gray-500 {
+    @apply text-emerald-600;
+  }
+
+  html.theme-midnight .bg-white {
+    @apply bg-slate-900/70 backdrop-blur;
+  }
+
+  html.theme-midnight .bg-white\/80 {
+    @apply bg-slate-900/60;
+  }
+
+  html.theme-midnight .bg-gray-50 {
+    @apply bg-slate-950/80;
+  }
+
+  html.theme-midnight .bg-gray-100 {
+    @apply bg-slate-900/70;
+  }
+
+  html.theme-midnight .border-gray-200 {
+    @apply border-indigo-900/60;
+  }
+
+  html.theme-midnight .border-gray-300 {
+    @apply border-indigo-800/60;
+  }
+
+  html.theme-midnight .divide-gray-200 {
+    @apply divide-slate-800/80;
+  }
+
+  html.theme-midnight .ring-gray-900\/5 {
+    @apply ring-indigo-500/20;
+  }
+
+  html.theme-midnight .text-gray-900,
+  html.theme-midnight .text-gray-800 {
+    @apply text-slate-100;
+  }
+
+  html.theme-midnight .text-gray-700 {
+    @apply text-slate-200;
+  }
+
+  html.theme-midnight .text-gray-600 {
+    @apply text-slate-300;
+  }
+
+  html.theme-midnight .text-gray-500 {
+    @apply text-slate-400;
   }
 }
 }
