@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useXnat } from '../contexts/XnatContext';
-import { Upload, Loader, CheckCircle, XCircle, AlertCircle, Shield, X } from 'lucide-react';
-import { dicomAnonymizer, DEFAULT_ANONYMIZATION_SCRIPT } from '../services/dicom-anonymizer';
+import { Upload, Loader, CheckCircle, XCircle, AlertCircle, Shield, X, FileText, Download, Eye, Maximize2, Minimize2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { dicomAnonymizer, DEFAULT_ANONYMIZATION_SCRIPT, type AnonymizationManifest } from '../services/dicom-anonymizer';
+import * as pako from 'pako';
 
 type ImportHandler = 'DICOM-zip' | 'SI';
 type Destination = 'prearchive' | 'archive';
@@ -23,6 +24,7 @@ export function CompressedUploader() {
   const [importHandler, setImportHandler] = useState<ImportHandler>('DICOM-zip');
   const [ignoreUnparsable, setIgnoreUnparsable] = useState(true);
   const [destination, setDestination] = useState<Destination>('prearchive');
+  const [enablePixelCheck, setEnablePixelCheck] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -30,6 +32,12 @@ export function CompressedUploader() {
   const [processingMessage, setProcessingMessage] = useState('');
   const [anonymizationScript, setAnonymizationScript] = useState<string | null>(null);
   const [showScriptDialog, setShowScriptDialog] = useState(false);
+  const [isScriptMaximized, setIsScriptMaximized] = useState(false);
+  const [anonymizationManifest, setAnonymizationManifest] = useState<AnonymizationManifest | null>(null);
+  const [showManifestDialog, setShowManifestDialog] = useState(false);
+  const [isManifestMaximized, setIsManifestMaximized] = useState(false);
+  const [manifestSortField, setManifestSortField] = useState<'fileName' | 'tag' | 'tagName'>('fileName');
+  const [manifestSortDirection, setManifestSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Fetch available projects
   const { data: projects = [] } = useQuery({
@@ -93,8 +101,65 @@ export function CompressedUploader() {
     return null;
   };
 
+  const downloadManifest = () => {
+    if (!anonymizationManifest) return;
+
+    // Create CSV content
+    const headers = ['File Name', 'DICOM Tag', 'Tag Name', 'Original Value', 'New Value'];
+    const rows = anonymizationManifest.changes.map(change => [
+      change.fileName,
+      change.tag,
+      change.tagName,
+      change.originalValue,
+      change.newValue
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `anonymization-manifest-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleManifestSort = (field: 'fileName' | 'tag' | 'tagName') => {
+    if (manifestSortField === field) {
+      // Toggle direction if clicking same field
+      setManifestSortDirection(manifestSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field and default to ascending
+      setManifestSortField(field);
+      setManifestSortDirection('asc');
+    }
+  };
+
+  const getSortedManifestChanges = () => {
+    if (!anonymizationManifest) return [];
+
+    const sorted = [...anonymizationManifest.changes].sort((a, b) => {
+      let aVal = a[manifestSortField];
+      let bVal = b[manifestSortField];
+
+      const comparison = aVal.localeCompare(bVal);
+      return manifestSortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return sorted;
+  };
+
   const anonymizeDicomFiles = async (dicomFiles: File[]): Promise<{ file: File; blob: Blob }[]> => {
     const anonymizedResults: { file: File; blob: Blob }[] = [];
+    const allChanges: AnonymizationManifest['changes'] = [];
+    const allWarnings: string[] = [];
 
     // Get the anonymization script for the selected project from XNAT
     let script = anonymizationScript || DEFAULT_ANONYMIZATION_SCRIPT;
@@ -114,19 +179,34 @@ export function CompressedUploader() {
 
       try {
         // Use dicomedit with XNAT script
-        const anonymizedBlob = await dicomAnonymizer.anonymizeFile(
+        const result = await dicomAnonymizer.anonymizeFile(
           file,
-          { script },
+          { script, enablePixelCheck },
           (msg) => {
             setProcessingMessage(`Anonymizing ${i + 1}/${dicomFiles.length}: ${msg}`);
           }
         );
 
-        anonymizedResults.push({ file, blob: anonymizedBlob });
+        anonymizedResults.push({ file, blob: result.blob });
+        allChanges.push(...result.changes);
+        allWarnings.push(...result.warnings);
       } catch (error) {
         console.error(`Failed to anonymize ${file.name}:`, error);
         throw new Error(`Failed to anonymize ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
+    }
+
+    // Store the manifest
+    setAnonymizationManifest({
+      timestamp: new Date().toISOString(),
+      totalFiles: dicomFiles.length,
+      changes: allChanges,
+      warnings: allWarnings,
+    });
+
+    // Warn if no changes were detected - this likely means anonymization failed
+    if (dicomFiles.length > 0 && allChanges.length === 0) {
+      console.warn('WARNING: Anonymization processed files but no changes were detected. This may indicate a problem with the anonymization script.');
     }
 
     return anonymizedResults;
@@ -170,6 +250,8 @@ export function CompressedUploader() {
     let processedCount = 0;
     let dicomCount = 0;
     let skippedCount = 0;
+    const allChanges: AnonymizationManifest['changes'] = [];
+    const allWarnings: string[] = [];
 
     // Count DICOM files (excluding system files)
     for (const filename of files) {
@@ -208,10 +290,12 @@ export function CompressedUploader() {
           const dcmFile = new File([arrayBuffer], filename, { type: 'application/dicom' });
 
           // Anonymize using dicomedit with XNAT script
-          const anonymizedBlob = await dicomAnonymizer.anonymizeFile(dcmFile, { script });
+          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck });
+          allChanges.push(...result.changes);
+          allWarnings.push(...result.warnings);
 
           // Add to new zip
-          const anonymizedBuffer = await anonymizedBlob.arrayBuffer();
+          const anonymizedBuffer = await result.blob.arrayBuffer();
 
           console.log(`File ${filename}: input=${arrayBuffer.byteLength}, output=${anonymizedBuffer.byteLength}, ratio=${(anonymizedBuffer.byteLength / arrayBuffer.byteLength * 100).toFixed(1)}%`);
 
@@ -242,6 +326,19 @@ export function CompressedUploader() {
       console.log(`Skipped ${skippedCount} file(s) (system files or failed to process)`);
     }
 
+    // Store the manifest
+    setAnonymizationManifest({
+      timestamp: new Date().toISOString(),
+      totalFiles: dicomCount,
+      changes: allChanges,
+      warnings: allWarnings,
+    });
+
+    // Warn if no changes were detected - this likely means anonymization failed
+    if (dicomCount > 0 && allChanges.length === 0) {
+      console.warn('WARNING: Anonymization processed files but no changes were detected. This may indicate a problem with the anonymization script.');
+    }
+
     setProcessingMessage('Creating anonymized archive...');
     const anonymizedZipBlob = await newZip.generateAsync({
       type: 'blob',
@@ -250,6 +347,172 @@ export function CompressedUploader() {
     });
 
     return new File([anonymizedZipBlob], `anonymized_${Date.now()}.zip`, { type: 'application/zip' });
+  };
+
+  const processTarGzFile = async (tarGzFile: File): Promise<File> => {
+    setProcessingMessage('Loading tar.gz file...');
+
+    // Get the anonymization script for the selected project from XNAT
+    let script = anonymizationScript || DEFAULT_ANONYMIZATION_SCRIPT;
+
+    if (!anonymizationScript && client && selectedProject) {
+      try {
+        const xnatScript = await client.getAnonymizationScriptForProject(selectedProject);
+        script = xnatScript || DEFAULT_ANONYMIZATION_SCRIPT;
+      } catch (error) {
+        console.warn('Failed to fetch XNAT script, using default:', error);
+      }
+    }
+
+    // Step 1: Read the gzipped file
+    const arrayBuffer = await tarGzFile.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+
+    // Step 2: Decompress with pako
+    setProcessingMessage('Decompressing archive...');
+    const decompressed = pako.inflate(uint8Array);
+
+    // Step 3: Parse tar file
+    setProcessingMessage('Extracting tar archive...');
+    const tarFiles = parseTar(decompressed);
+
+    // Step 4: Process files
+    const JSZip = (await import('jszip')).default;
+    const newZip = new JSZip();
+    let processedCount = 0;
+    let dicomCount = 0;
+    let skippedCount = 0;
+    const allChanges: AnonymizationManifest['changes'] = [];
+    const allWarnings: string[] = [];
+
+    // Count DICOM files (excluding system files)
+    for (const { name } of tarFiles) {
+      if (!shouldSkipFile(name) && name.toLowerCase().endsWith('.dcm')) {
+        dicomCount++;
+      }
+    }
+
+    setProcessingMessage(`Found ${dicomCount} DICOM file${dicomCount !== 1 ? 's' : ''} in archive...`);
+
+    // Process each file in the tar
+    for (const { name, data } of tarFiles) {
+      // Skip system/metadata files
+      if (shouldSkipFile(name)) {
+        skippedCount++;
+        console.log(`Skipping system file: ${name}`);
+        continue;
+      }
+
+      // Check if it's a DICOM file
+      if (name.toLowerCase().endsWith('.dcm')) {
+        processedCount++;
+        setProcessingMessage(`Anonymizing ${processedCount}/${dicomCount}: ${name}...`);
+
+        try {
+          const dcmFile = new File([data], name, { type: 'application/dicom' });
+
+          // Anonymize using dicomedit with XNAT script
+          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck });
+          allChanges.push(...result.changes);
+          allWarnings.push(...result.warnings);
+
+          // Add to new zip
+          const anonymizedBuffer = await result.blob.arrayBuffer();
+
+          console.log(`File ${name}: input=${data.byteLength}, output=${anonymizedBuffer.byteLength}, ratio=${(anonymizedBuffer.byteLength / data.byteLength * 100).toFixed(1)}%`);
+
+          // Verify the output is reasonable
+          const sizeRatio = anonymizedBuffer.byteLength / data.byteLength;
+          if (sizeRatio < 0.8) {
+            console.error(`Output file ${name} is ${(sizeRatio * 100).toFixed(1)}% of input size - seems corrupted! Using original file.`);
+            newZip.file(name, data);
+            skippedCount++;
+          } else {
+            newZip.file(name, anonymizedBuffer);
+          }
+        } catch (error) {
+          console.error(`Failed to anonymize ${name}:`, error);
+          console.warn(`Skipping file that failed to anonymize: ${name}`);
+          skippedCount++;
+          continue;
+        }
+      } else {
+        // Non-DICOM file - copy as-is
+        newZip.file(name, data);
+      }
+    }
+
+    if (skippedCount > 0) {
+      console.log(`Skipped ${skippedCount} file(s) (system files or failed to process)`);
+    }
+
+    // Store the manifest
+    setAnonymizationManifest({
+      timestamp: new Date().toISOString(),
+      totalFiles: dicomCount,
+      changes: allChanges,
+      warnings: allWarnings,
+    });
+
+    // Warn if no changes were detected
+    if (dicomCount > 0 && allChanges.length === 0) {
+      console.warn('WARNING: Anonymization processed files but no changes were detected. This may indicate a problem with the anonymization script.');
+    }
+
+    setProcessingMessage('Creating anonymized archive...');
+    const anonymizedZipBlob = await newZip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 }
+    });
+
+    return new File([anonymizedZipBlob], `anonymized_${Date.now()}.zip`, { type: 'application/zip' });
+  };
+
+  // Simple tar parser
+  const parseTar = (tarData: Uint8Array): Array<{ name: string; data: Uint8Array }> => {
+    const files: Array<{ name: string; data: Uint8Array }> = [];
+    let offset = 0;
+
+    while (offset < tarData.length) {
+      // Read header
+      const header = tarData.slice(offset, offset + 512);
+
+      // Check if we've hit the end (two consecutive zero blocks)
+      if (header.every(byte => byte === 0)) {
+        break;
+      }
+
+      // Extract filename (first 100 bytes, null-terminated)
+      const nameBytes = header.slice(0, 100);
+      const nameEnd = nameBytes.indexOf(0);
+      const name = new TextDecoder().decode(nameBytes.slice(0, nameEnd > 0 ? nameEnd : 100)).trim();
+
+      if (!name) {
+        break;
+      }
+
+      // Extract file size (124-135, octal string)
+      const sizeBytes = header.slice(124, 136);
+      const sizeStr = new TextDecoder().decode(sizeBytes).trim().replace(/\0/g, '');
+      const size = parseInt(sizeStr, 8) || 0;
+
+      // Extract type flag (156)
+      const typeFlag = String.fromCharCode(header[156]);
+
+      offset += 512; // Move past header
+
+      // Only extract regular files (type '0' or '\0')
+      if ((typeFlag === '0' || typeFlag === '\0') && size > 0) {
+        const fileData = tarData.slice(offset, offset + size);
+        files.push({ name, data: fileData });
+      }
+
+      // Move to next header (tar blocks are 512-byte aligned)
+      offset += Math.ceil(size / 512) * 512;
+    }
+
+    return files;
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -352,6 +615,7 @@ export function CompressedUploader() {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!selectedProject) return;
     setIsDragging(true);
   };
 
@@ -396,6 +660,11 @@ export function CompressedUploader() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+
+    if (!selectedProject) {
+      alert('Please select a project before uploading files.');
+      return;
+    }
 
     setIsProcessing(true);
     setProcessingMessage('Reading files...');
@@ -505,14 +774,17 @@ export function CompressedUploader() {
           alert(`Failed to process zip file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       } else if (fileName.endsWith('.gz') || fileName.endsWith('.tgz')) {
-        // For tar.gz/tgz, we can't easily process, so upload as-is with a warning
-        if (confirm('TAR.GZ/TGZ archives cannot be automatically anonymized. DICOM files inside will NOT be anonymized. Continue?')) {
-          setSelectedFile(file);
+        // Process tar.gz/tgz file - extract, anonymize DICOMs, re-zip
+        try {
+          const anonymizedZip = await processTarGzFile(file);
+          setSelectedFile(anonymizedZip);
           setIsProcessing(false);
           setProcessingMessage('');
-        } else {
+        } catch (error) {
+          console.error('Error processing tar.gz:', error);
           setIsProcessing(false);
           setProcessingMessage('');
+          alert(`Failed to process tar.gz file: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       } else if (fileName.endsWith('.dcm')) {
         // Single DICOM file - anonymize and zip it
@@ -718,13 +990,14 @@ export function CompressedUploader() {
           {/* Project Selection */}
           <div>
             <label htmlFor="project" className="block text-sm font-medium text-gray-700 mb-2">
-              Project
+              Project <span className="text-red-500">*</span>
             </label>
             <select
               id="project"
               value={selectedProject}
               onChange={(e) => setSelectedProject(e.target.value)}
               disabled={isUploading}
+              required
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
               <option value="">Select a project...</option>
@@ -749,6 +1022,27 @@ export function CompressedUploader() {
               <span className="text-sm font-medium text-gray-700">
                 Ignore unparsable files
               </span>
+            </label>
+          </div>
+
+          {/* Enable Pixel Data Check */}
+          <div>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={enablePixelCheck}
+                onChange={(e) => setEnablePixelCheck(e.target.checked)}
+                disabled={isUploading}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:bg-gray-100 mt-0.5"
+              />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-700">
+                  Check for text in pixel data (OCR)
+                </span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Scans DICOM images for burned-in text that may contain PHI. Slower but more thorough.
+                </p>
+              </div>
             </label>
           </div>
 
@@ -797,13 +1091,15 @@ export function CompressedUploader() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={() => !isUploading && fileInputRef.current?.click()}
-              className={`relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                isDragging
-                  ? 'border-blue-500 bg-blue-50'
+              onClick={() => !isUploading && selectedProject && fileInputRef.current?.click()}
+              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                !selectedProject
+                  ? 'border-gray-200 bg-gray-100 cursor-not-allowed opacity-50'
+                  : isDragging
+                  ? 'border-blue-500 bg-blue-50 cursor-pointer'
                   : selectedFile
-                  ? 'border-green-300 bg-green-50'
-                  : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                  ? 'border-green-300 bg-green-50 cursor-pointer'
+                  : 'border-gray-300 hover:border-gray-400 bg-gray-50 cursor-pointer'
               } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <input
@@ -838,25 +1134,115 @@ export function CompressedUploader() {
               ) : (
                 <div>
                   <p className="text-sm font-medium text-gray-900 mb-1">
-                    {isDragging ? 'Drop files or folders here' : 'Drag & drop archive, folder, or DICOM files'}
+                    {!selectedProject
+                      ? 'Select a project first'
+                      : isDragging
+                      ? 'Drop files or folders here'
+                      : 'Drag & drop archive, folder, or DICOM files'}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    Archives: .zip, .tar.gz, .tgz • DICOM: .dcm files or folders (auto-zipped)
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    or click to browse
-                  </p>
+                  {selectedProject && (
+                    <>
+                      <p className="text-xs text-gray-500">
+                        Archives: .zip, .tar.gz, .tgz • DICOM: .dcm files or folders (auto-zipped)
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        or click to browse
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
+          {/* Anonymization Manifest Preview */}
+          {anonymizationManifest && !isUploading && anonymizationManifest.totalFiles > 0 && (
+            <div className={`border rounded-lg p-4 ${
+              anonymizationManifest.changes.length > 0
+                ? 'bg-blue-50 border-blue-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex items-start gap-2">
+                {anonymizationManifest.changes.length > 0 ? (
+                  <FileText className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                )}
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${
+                    anonymizationManifest.changes.length > 0 ? 'text-blue-900' : 'text-red-900'
+                  }`}>
+                    {anonymizationManifest.changes.length > 0 ? 'Anonymization Complete' : 'Anonymization Warning'}
+                  </p>
+                  <p className={`text-xs mt-1 ${
+                    anonymizationManifest.changes.length > 0 ? 'text-blue-700' : 'text-red-700'
+                  }`}>
+                    {anonymizationManifest.totalFiles} file(s) processed, {anonymizationManifest.changes.length} change(s) recorded
+                    {anonymizationManifest.changes.length === 0 && (
+                      <span className="block mt-1">
+                        No changes were detected. This may indicate a problem with the anonymization script or
+                        the DICOM files may not contain identifiable information.
+                      </span>
+                    )}
+                    {anonymizationManifest.warnings && anonymizationManifest.warnings.length > 0 && (
+                      <span className="block mt-2 text-amber-700 font-medium">
+                        ⚠️ {anonymizationManifest.warnings.length} warning(s): Text detected in pixel data - may contain burned-in PHI
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowManifestDialog(true)}
+                      className={`text-xs hover:underline ${
+                        anonymizationManifest.changes.length > 0
+                          ? 'text-blue-700 hover:text-blue-900'
+                          : 'text-red-700 hover:text-red-900'
+                      }`}
+                    >
+                      {anonymizationManifest.changes.length > 0 ? 'View Changes' : 'View Manifest'}
+                    </button>
+                    {anonymizationManifest.changes.length > 0 && (
+                      <>
+                        <span className={anonymizationManifest.changes.length > 0 ? 'text-blue-400' : 'text-red-400'}>•</span>
+                        <button
+                          type="button"
+                          onClick={downloadManifest}
+                          className="text-xs text-blue-700 hover:text-blue-900 hover:underline"
+                        >
+                          Download Manifest
+                        </button>
+                      </>
+                    )}
+                    <span className={anonymizationManifest.changes.length > 0 ? 'text-blue-400' : 'text-red-400'}>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowScriptDialog(true)}
+                      className={`text-xs hover:underline ${
+                        anonymizationManifest.changes.length > 0
+                          ? 'text-blue-700 hover:text-blue-900'
+                          : 'text-red-700 hover:text-red-900'
+                      }`}
+                    >
+                      Review Script
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Submit Button */}
           <div>
             <button
               type="submit"
-              disabled={isUploading}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center gap-2"
+              disabled={isUploading || (anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0)}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              title={
+                anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0
+                  ? 'Upload blocked: Anonymization produced no changes. Please review the anonymization script.'
+                  : ''
+              }
             >
               {isUploading ? (
                 <>
@@ -870,6 +1256,11 @@ export function CompressedUploader() {
                 </>
               )}
             </button>
+            {anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0 && (
+              <p className="text-xs text-red-600 mt-2">
+                Upload blocked: Anonymization produced no changes. Review the script and ensure your DICOM files contain PHI data.
+              </p>
+            )}
           </div>
         </form>
       </div>
@@ -945,17 +1336,54 @@ export function CompressedUploader() {
 
             {/* Success Message */}
             {uploadProgress.stage === 'complete' && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm text-green-800 mb-3">
-                  Your data has been uploaded successfully to the {destination}.
-                </p>
-                {destination === 'prearchive' && (
-                  <Link
-                    to="/prearchive"
-                    className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    View Prearchive
-                  </Link>
+              <div className="space-y-3">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800 mb-3">
+                    Your data has been uploaded successfully to the {destination}.
+                  </p>
+                  <div className="flex gap-2">
+                    {destination === 'prearchive' && (
+                      <Link
+                        to="/prearchive"
+                        className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        View Prearchive
+                      </Link>
+                    )}
+                    {anonymizationManifest && anonymizationManifest.changes.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => setShowManifestDialog(true)}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View Anonymization Manifest
+                        </button>
+                        <button
+                          onClick={downloadManifest}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Manifest
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {anonymizationManifest && anonymizationManifest.changes.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-2">
+                      <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">
+                          Anonymization Summary
+                        </p>
+                        <p className="text-xs text-blue-700 mt-1">
+                          {anonymizationManifest.totalFiles} file(s) processed, {anonymizationManifest.changes.length} change(s) recorded
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -966,18 +1394,29 @@ export function CompressedUploader() {
       {/* Anonymization Script Dialog */}
       {showScriptDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
+            isScriptMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-4xl w-full max-h-[90vh]'
+          }`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <Shield className="w-6 h-6 text-indigo-600" />
                 <h3 className="text-lg font-semibold text-gray-900">DICOM Anonymization Script</h3>
               </div>
-              <button
-                onClick={() => setShowScriptDialog(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsScriptMaximized(!isScriptMaximized)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  title={isScriptMaximized ? 'Minimize' : 'Maximize'}
+                >
+                  {isScriptMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={() => setShowScriptDialog(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -1026,42 +1465,6 @@ export function CompressedUploader() {
                 )}
               </div>
 
-              {/* What Gets Anonymized */}
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">What Gets Anonymized:</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Patient Information</p>
-                    <ul className="text-xs text-gray-600 space-y-0.5">
-                      <li>• Birth Date (removed)</li>
-                      <li>• Birth Time (removed)</li>
-                      <li>• Other Patient IDs (removed)</li>
-                      <li>• Address (removed)</li>
-                      <li>• Phone Numbers (removed)</li>
-                      <li>• Ethnic Group (removed)</li>
-                    </ul>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Institution Information</p>
-                    <ul className="text-xs text-gray-600 space-y-0.5">
-                      <li>• Institution Name (removed)</li>
-                      <li>• Institution Address (removed)</li>
-                      <li>• Department Name (removed)</li>
-                      <li>• Operator Names (removed)</li>
-                    </ul>
-                  </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs font-semibold text-gray-700 mb-1">Physician Information</p>
-                    <ul className="text-xs text-gray-600 space-y-0.5">
-                      <li>• Referring Physician (removed)</li>
-                      <li>• Performing Physician (removed)</li>
-                      <li>• Reading Physician (removed)</li>
-                      <li>• Physician(s) of Record (removed)</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
               {/* Note about archive processing */}
               <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                 <div className="flex gap-2">
@@ -1070,8 +1473,8 @@ export function CompressedUploader() {
                     <p className="font-medium">Automatic Processing:</p>
                     <ul className="mt-1 space-y-1 list-disc list-inside">
                       <li><strong>ZIP files:</strong> Automatically extracted, DICOM files anonymized, then re-zipped</li>
+                      <li><strong>TAR.GZ/TGZ files:</strong> Automatically decompressed, DICOM files anonymized, then re-zipped</li>
                       <li><strong>DICOM files:</strong> Automatically anonymized and zipped</li>
-                      <li><strong>TAR.GZ/TGZ:</strong> Uploaded as-is (cannot be processed)</li>
                     </ul>
                   </div>
                 </div>
@@ -1081,6 +1484,187 @@ export function CompressedUploader() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowScriptDialog(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Anonymization Manifest Dialog */}
+      {showManifestDialog && anonymizationManifest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
+            isManifestMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-6xl w-full max-h-[90vh]'
+          }`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <FileText className="w-6 h-6 text-indigo-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Anonymization Manifest</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsManifestMaximized(!isManifestMaximized)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  title={isManifestMaximized ? 'Restore' : 'Maximize'}
+                >
+                  {isManifestMaximized ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={() => setShowManifestDialog(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Warnings */}
+              {anonymizationManifest.warnings && anonymizationManifest.warnings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-amber-900 font-semibold mb-2">Pixel Data Warnings</p>
+                      <ul className="text-sm text-amber-800 space-y-1">
+                        {anonymizationManifest.warnings.map((warning, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-amber-600 mt-0.5">•</span>
+                            <span>{warning}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-amber-700 mt-2">
+                        These files may contain PHI burned into the pixel data. DICOM tag anonymization cannot remove burned-in text.
+                        Manual review is recommended.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Summary */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-blue-600 font-medium">Total Files</p>
+                    <p className="text-blue-900 text-lg font-semibold">{anonymizationManifest.totalFiles}</p>
+                  </div>
+                  <div>
+                    <p className="text-blue-600 font-medium">Changes Recorded</p>
+                    <p className="text-blue-900 text-lg font-semibold">{anonymizationManifest.changes.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-blue-600 font-medium">Timestamp</p>
+                    <p className="text-blue-900 text-sm">{new Date(anonymizationManifest.timestamp).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Changes Table */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                {anonymizationManifest.changes.length > 0 ? (
+                  <div className={`overflow-x-auto ${isManifestMaximized ? 'max-h-[calc(100vh-300px)]' : 'max-h-96'}`}>
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <button
+                              onClick={() => handleManifestSort('fileName')}
+                              className="flex items-center gap-1 hover:text-gray-700 transition-colors"
+                            >
+                              File Name
+                              {manifestSortField === 'fileName' ? (
+                                manifestSortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 opacity-50" />
+                              )}
+                            </button>
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <button
+                              onClick={() => handleManifestSort('tag')}
+                              className="flex items-center gap-1 hover:text-gray-700 transition-colors"
+                            >
+                              DICOM Tag
+                              {manifestSortField === 'tag' ? (
+                                manifestSortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 opacity-50" />
+                              )}
+                            </button>
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <button
+                              onClick={() => handleManifestSort('tagName')}
+                              className="flex items-center gap-1 hover:text-gray-700 transition-colors"
+                            >
+                              Tag Name
+                              {manifestSortField === 'tagName' ? (
+                                manifestSortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 opacity-50" />
+                              )}
+                            </button>
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Original Value
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            New Value
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {getSortedManifestChanges().map((change, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-900 font-mono">
+                              {change.fileName}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 font-mono">
+                              {change.tag}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">
+                              {change.tagName}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {change.originalValue || <span className="text-gray-400 italic">(empty)</span>}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {change.newValue || <span className="text-gray-400 italic">(empty)</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center bg-gray-50">
+                    <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-gray-900 mb-2">No Changes Detected</p>
+                    <p className="text-xs text-gray-600 max-w-md mx-auto">
+                      The anonymization process ran successfully, but no DICOM tags were modified.
+                      This could mean the files were already anonymized or don't contain the tags
+                      targeted by the anonymization script.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={downloadManifest}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Download className="w-4 h-4" />
+                Download as CSV
+              </button>
+              <button
+                onClick={() => setShowManifestDialog(false)}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
               >
                 Close
