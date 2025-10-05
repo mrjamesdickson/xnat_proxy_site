@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { HelpCircle, Check } from 'lucide-react';
+import { HelpCircle, Check, Grid3x3, List, Plus } from 'lucide-react';
+import clsx from 'clsx';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatActiveUserSessions, XnatUser, XnatUserRoleMap } from '../services/xnat-api';
 
@@ -285,6 +286,7 @@ export function AdminUsers() {
   };
 
   const [userScope, setUserScope] = useState<'current' | 'all'>('current');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
 
   const {
     data: users = [],
@@ -607,9 +609,13 @@ export function AdminUsers() {
 
       return true;
     });
-  }, [sortedUsers, filters, roleMap, activeUsers]);
+  }, [sortedUsers, filters, roleMapByUser, activeUsers]);
 
   const isSubmitting = createUserMutation.isPending || updateUserMutation.isPending;
+
+  const isShowingAllUsers = userScope === 'all';
+  const totalUsers = users.length;
+  const matchedUsers = filteredUsers.length;
 
   const handleReloadUserList = () => {
     setUserScope('current');
@@ -623,251 +629,452 @@ export function AdminUsers() {
     queryClient.invalidateQueries({ queryKey: ['admin-users'], exact: false });
   };
 
+  let content: ReactNode;
+
+  if (isLoading) {
+    content = (
+      <div className="space-y-4 px-6 py-10">
+        {[...Array(3)].map((_, index) => (
+          <div key={index} className="h-12 animate-pulse rounded bg-gray-100" />
+        ))}
+      </div>
+    );
+  } else if (error) {
+    content = (
+      <div className="px-6 py-10 text-center">
+        <div className="mx-auto max-w-md rounded-md bg-red-50 p-4 text-sm text-red-700">
+          Failed to load users. Please verify your permissions and try again.
+        </div>
+      </div>
+    );
+  } else if (matchedUsers === 0) {
+    content = (
+      <div className="px-6 py-12 text-center">
+        <div className="mx-auto max-w-sm text-sm text-gray-600">
+          No users match the selected filters. Adjust your filters or load all users to broaden the results.
+        </div>
+      </div>
+    );
+  } else if (viewMode === 'table') {
+    content = (
+      <div className="overflow-x-auto px-6 py-4">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+            <tr>
+              <th className="px-4 py-2">ID</th>
+              <th className="px-4 py-2">Username</th>
+              <th className="px-4 py-2">Name</th>
+              <th className="px-4 py-2">Email</th>
+              <th className="px-4 py-2">Roles</th>
+              <th className="px-4 py-2 text-center">Verified</th>
+              <th className="px-4 py-2 text-center">Enabled</th>
+              <th className="px-4 py-2 text-center">Active</th>
+              <th className="px-4 py-2">Last Login</th>
+              <th className="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200 text-gray-700">
+            {filteredUsers.map((user) => {
+              const identifier = getUserIdentifier(user);
+              const numericId = getUserNumericId(user) || identifier;
+              const username = getUserLogin(user) || identifier;
+              const tableName = getUserTableName(user);
+              const email = getEmailValue(user);
+              const roleList = getRolesFromUser(user, roleMapByUser[username] ?? []);
+              const rolesText = roleList.length ? roleList.join(', ') : '—';
+              const isVerified = getBoolean(user, ['verified', 'VERIFIED'], Boolean(user.verified));
+              const isEnabled = getBoolean(user, ['enabled', 'ENABLED', 'status'], Boolean(user.enabled));
+              const activeInfo = activeUsers[username];
+              const hasActiveSessions = Boolean(activeInfo?.count && activeInfo.count > 0);
+              const lastLoginRaw = getLastLoginRaw(user) ?? user.lastSuccessfulLogin ?? user.last_modified;
+              const lastLogin = formatDate(lastLoginRaw ?? '');
+
+              const key = identifier || username;
+
+              return (
+                <tr key={key} className="align-middle">
+                  <td className="px-4 py-3 text-blue-600">
+                    <a href="#" className="hover:underline">
+                      {numericId || '—'}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3">
+                    <a href="#" className="text-blue-600 hover:underline">
+                      {username}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3">
+                    <a href="#" className="text-blue-600 hover:underline">
+                      {tableName}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3">
+                    {email ? (
+                      <a href={`mailto:${email}`} className="text-blue-600 hover:underline">
+                        {email}
+                      </a>
+                    ) : (
+                      <span className="text-gray-500">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    <span className="block max-w-xs truncate" title={rolesText}>
+                      {rolesText}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {isVerified ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {isEnabled ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {hasActiveSessions ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{lastLogin}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(user)}
+                        className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(user)}
+                        className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="px-6 py-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredUsers.map((user) => {
+            const identifier = getUserIdentifier(user);
+            const numericId = getUserNumericId(user) || identifier;
+            const username = getUserLogin(user) || identifier;
+            const tableName = getUserTableName(user);
+            const email = getEmailValue(user);
+            const roleList = getRolesFromUser(user, roleMapByUser[username] ?? []);
+            const rolesText = roleList.length ? roleList.join(', ') : '—';
+            const isVerified = getBoolean(user, ['verified', 'VERIFIED'], Boolean(user.verified));
+            const isEnabled = getBoolean(user, ['enabled', 'ENABLED', 'status'], Boolean(user.enabled));
+            const activeInfo = activeUsers[username];
+            const hasActiveSessions = Boolean(activeInfo?.count && activeInfo.count > 0);
+            const lastLoginRaw = getLastLoginRaw(user) ?? user.lastSuccessfulLogin ?? user.last_modified;
+            const lastLogin = formatDate(lastLoginRaw ?? '');
+
+            const key = identifier || username;
+
+            return (
+              <div
+                key={key}
+                className="flex h-full flex-col justify-between rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Username</p>
+                      <p className="text-lg font-semibold text-gray-900">{username}</p>
+                      <p className="mt-1 text-sm text-gray-500">{tableName}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span
+                        className={clsx(
+                          'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                          isEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                        )}
+                      >
+                        {isEnabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                      {hasActiveSessions ? (
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                          Active Now
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3 text-sm text-gray-600">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">User ID</span>
+                      <span className="font-medium text-gray-900">{numericId || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-gray-500">Email</span>
+                      {email ? (
+                        <a href={`mailto:${email}`} className="text-blue-600 hover:underline">
+                          {email}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Roles</span>
+                      <p className="mt-1 text-gray-900">{rolesText}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium">
+                    <span
+                      className={clsx(
+                        'inline-flex items-center rounded-full px-2.5 py-0.5',
+                        isVerified ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                      )}
+                    >
+                      {isVerified ? 'Verified' : 'Unverified'}
+                    </span>
+                    <span
+                      className={clsx(
+                        'inline-flex items-center rounded-full px-2.5 py-0.5',
+                        isEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                      )}
+                    >
+                      {isEnabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                    <span
+                      className={clsx(
+                        'inline-flex items-center rounded-full px-2.5 py-0.5',
+                        hasActiveSessions ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'
+                      )}
+                    >
+                      {hasActiveSessions ? 'Active Sessions' : 'No Active Sessions'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between text-xs text-gray-500">
+                  <span>Last login: {lastLogin}</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditModal(user)}
+                      className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUser(user)}
+                      className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="border-b border-gray-200 pb-4">
-        <h1 className="text-3xl font-semibold text-gray-900">Manage Users</h1>
+      <div className="sm:flex sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
+            Manage Users
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">Administer account access, roles, and session activity.</p>
+        </div>
+        <div className="mt-4 flex items-center gap-3 sm:ml-16 sm:mt-0">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={clsx(
+                'px-3 py-2 text-sm font-medium rounded-l-md border',
+                viewMode === 'grid'
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              )}
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={clsx(
+                'px-3 py-2 text-sm font-medium rounded-r-md border-t border-r border-b',
+                viewMode === 'table'
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              )}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <Plus className="h-4 w-4" />
+            New User
+          </button>
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-3">
+      <div className="rounded-lg bg-white shadow-sm ring-1 ring-gray-900/5">
+        <div className="flex flex-col gap-4 border-b border-gray-200 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleOpenCreateModal}
-              className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              Create New User
-            </button>
-            <button
-              type="button"
               onClick={handleReloadUserList}
-              className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
               Reload User List
             </button>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-              <HelpCircle className="h-4 w-4" />
-            </span>
             <button
               type="button"
               onClick={handleLoadAllUsers}
-              className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              disabled={isShowingAllUsers}
+              className={clsx(
+                'rounded-md border px-4 py-2 text-sm font-medium shadow-sm',
+                isShowingAllUsers
+                  ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              )}
             >
               Load All Users
             </button>
           </div>
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100">
+              <HelpCircle className="h-4 w-4" />
+            </span>
+            <span>
+              {isShowingAllUsers
+                ? 'Showing all known users in the XNAT directory.'
+                : 'Showing users scoped to this XNAT node.'}
+            </span>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {isLoading ? (
-            <div className="space-y-4 px-4 py-10">
-              {[...Array(3)].map((_, index) => (
-                <div key={index} className="h-12 animate-pulse rounded bg-gray-100" />
-              ))}
+        <div className="space-y-4 px-6 py-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">User ID</label>
+              <input
+                value={filters.id}
+                onChange={(event) => handleFilterChange('id', event.target.value)}
+                placeholder="Filter by ID"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
             </div>
-          ) : error ? (
-            <div className="px-4 py-10 text-center">
-              <div className="mx-auto max-w-md rounded-md bg-red-50 p-4 text-sm text-red-700">
-                Failed to load users. Please verify your permissions and try again.
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Username</label>
+              <input
+                value={filters.username}
+                onChange={(event) => handleFilterChange('username', event.target.value)}
+                placeholder="Filter by Username"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
             </div>
-          ) : (
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                <tr>
-                  <th className="px-4 py-2">ID</th>
-                  <th className="px-4 py-2">Username</th>
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">Email</th>
-                  <th className="px-4 py-2">Roles</th>
-                  <th className="px-4 py-2 text-center">Verified</th>
-                  <th className="px-4 py-2 text-center">Enabled</th>
-                  <th className="px-4 py-2 text-center">Active</th>
-                  <th className="px-4 py-2">Last Login</th>
-                  <th className="px-4 py-2"></th>
-                </tr>
-                <tr className="bg-white text-[13px] font-normal text-gray-600">
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <input
-                      value={filters.id}
-                      onChange={(event) => handleFilterChange('id', event.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                      placeholder="Filter by ID"
-                    />
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <input
-                      value={filters.username}
-                      onChange={(event) => handleFilterChange('username', event.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                      placeholder="Filter by Username"
-                    />
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <input
-                      value={filters.name}
-                      onChange={(event) => handleFilterChange('name', event.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                      placeholder="Filter by Name"
-                    />
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <input
-                      value={filters.email}
-                      onChange={(event) => handleFilterChange('email', event.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                      placeholder="Filter by Email"
-                    />
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <input
-                      value={filters.roles}
-                      onChange={(event) => handleFilterChange('roles', event.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                      placeholder="Filter by Roles"
-                    />
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2 text-center">
-                    <select
-                      value={filters.verified}
-                      onChange={(event) => handleFilterChange('verified', event.target.value as BooleanFilter)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                    >
-                      <option value="all">All</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2 text-center">
-                    <select
-                      value={filters.enabled}
-                      onChange={(event) => handleFilterChange('enabled', event.target.value as BooleanFilter)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                    >
-                      <option value="all">All</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2 text-center">
-                    <select
-                      value={filters.active}
-                      onChange={(event) => handleFilterChange('active', event.target.value as BooleanFilter)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                    >
-                      <option value="all">All</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2">
-                    <select
-                      value={filters.lastLogin}
-                      onChange={(event) => handleFilterChange('lastLogin', event.target.value as LastLoginFilter)}
-                      className="w-full rounded border border-gray-300 px-2 py-1"
-                    >
-                      <option value="all">All</option>
-                      <option value="has">Has Date</option>
-                      <option value="missing">No Date</option>
-                    </select>
-                  </th>
-                  <th className="border-t border-gray-200 px-4 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 text-gray-700">
-                {filteredUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
-                      No users match the selected filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredUsers.map((user) => {
-                    const identifier = getUserIdentifier(user);
-                    const numericId = getUserNumericId(user) || identifier;
-                    const username = getUserLogin(user) || identifier;
-                    const tableName = getUserTableName(user);
-                    const email = getEmailValue(user);
-                    const roleList = getRolesFromUser(user, roleMapByUser[username] ?? []);
-                    const rolesText = roleList.length ? roleList.join(', ') : '—';
-                    const isVerified = getBoolean(user, ['verified', 'VERIFIED'], Boolean(user.verified));
-                    const isEnabled = getBoolean(user, ['enabled', 'ENABLED', 'status'], Boolean(user.enabled));
-                    const activeInfo = activeUsers[username];
-                    const hasActiveSessions = Boolean(activeInfo?.count && activeInfo.count > 0);
-                    const lastLoginRaw = getLastLoginRaw(user) ?? user.lastSuccessfulLogin ?? user.last_modified;
-                    const lastLogin = formatDate(lastLoginRaw ?? '');
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <input
+                value={filters.name}
+                onChange={(event) => handleFilterChange('name', event.target.value)}
+                placeholder="Filter by Name"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Email</label>
+              <input
+                value={filters.email}
+                onChange={(event) => handleFilterChange('email', event.target.value)}
+                placeholder="Filter by Email"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700">Roles</label>
+              <input
+                value={filters.roles}
+                onChange={(event) => handleFilterChange('roles', event.target.value)}
+                placeholder="Filter by Roles"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Verified</label>
+              <select
+                value={filters.verified}
+                onChange={(event) => handleFilterChange('verified', event.target.value as BooleanFilter)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Enabled</label>
+              <select
+                value={filters.enabled}
+                onChange={(event) => handleFilterChange('enabled', event.target.value as BooleanFilter)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Active Sessions</label>
+              <select
+                value={filters.active}
+                onChange={(event) => handleFilterChange('active', event.target.value as BooleanFilter)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Last Login</label>
+              <select
+                value={filters.lastLogin}
+                onChange={(event) => handleFilterChange('lastLogin', event.target.value as LastLoginFilter)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="all">All</option>
+                <option value="has">Has Date</option>
+                <option value="missing">No Date</option>
+              </select>
+            </div>
+          </div>
 
-                    return (
-                      <tr key={identifier} className="align-middle">
-                        <td className="border-t px-4 py-2 text-blue-600">
-                          <a href="#" className="hover:underline">
-                            {numericId || '—'}
-                          </a>
-                        </td>
-                        <td className="border-t px-4 py-2">
-                          <a href="#" className="text-blue-600 hover:underline">
-                            {username}
-                          </a>
-                        </td>
-                        <td className="border-t px-4 py-2">
-                          <a href="#" className="text-blue-600 hover:underline">
-                            {tableName}
-                          </a>
-                        </td>
-                        <td className="border-t px-4 py-2">
-                          {email ? (
-                            <a href={`mailto:${email}`} className="text-blue-600 hover:underline">
-                              {email}
-                            </a>
-                          ) : (
-                            <span className="text-gray-500">—</span>
-                          )}
-                        </td>
-                        <td className="border-t px-4 py-2 text-gray-600">
-                          <span className="block max-w-xs truncate" title={rolesText}>
-                            {rolesText}
-                          </span>
-                        </td>
-                        <td className="border-t px-4 py-2 text-center">
-                          {isVerified ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
-                        </td>
-                        <td className="border-t px-4 py-2 text-center">
-                          {isEnabled ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
-                        </td>
-                        <td className="border-t px-4 py-2 text-center">
-                          {hasActiveSessions ? <Check className="mx-auto h-4 w-4 text-blue-600" /> : null}
-                        </td>
-                        <td className="border-t px-4 py-2 text-gray-600">{lastLogin}</td>
-                        <td className="border-t px-4 py-2 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(user)}
-                              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteUser(user)}
-                              className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          )}
+          <div className="flex flex-wrap items-center justify-between text-sm text-gray-500">
+            <span>
+              {matchedUsers === totalUsers
+                ? `Showing ${matchedUsers.toLocaleString()} users`
+                : `Showing ${matchedUsers.toLocaleString()} of ${totalUsers.toLocaleString()} users`}
+            </span>
+            <span>Toggle layouts to review user details in the format that suits you best.</span>
+          </div>
         </div>
       </div>
+
+      <div className="rounded-lg bg-white shadow-sm ring-1 ring-gray-900/5">{content}</div>
 
       {activeModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-900/30 px-4 py-6">
