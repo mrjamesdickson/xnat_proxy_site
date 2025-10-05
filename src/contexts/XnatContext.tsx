@@ -20,7 +20,7 @@ interface XnatProviderProps {
   children: ReactNode;
 }
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   CONFIG: 'xnat_config',
   JSESSIONID: 'xnat_jsessionid',
   USER: 'xnat_user',

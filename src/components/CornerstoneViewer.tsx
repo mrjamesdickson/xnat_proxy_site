@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useXnat } from '../contexts/XnatContext';
+import { useXnat, STORAGE_KEYS } from '../contexts/XnatContext';
 import {
   RenderingEngine,
   Enums,
@@ -23,7 +23,7 @@ import {
 const { ViewportType } = Enums;
 
 export function CornerstoneViewer() {
-  const { client } = useXnat();
+  const { client, config } = useXnat();
   const { experimentId, scanId } = useParams();
 
   const axialRef = useRef<HTMLDivElement>(null);
@@ -269,10 +269,12 @@ export function CornerstoneViewer() {
       setIsLoading(true);
       try {
         const url = `/api/xnat/data/archive/experiments/${experimentId}/scans/${scanId}/resources/DICOM/files`;
+        const sessionId = config?.jsessionid ?? localStorage.getItem(STORAGE_KEYS.JSESSIONID);
+        const headers: HeadersInit = sessionId ? { Cookie: `JSESSIONID=${sessionId}` } : {};
+
         const response = await fetch(url, {
-          headers: {
-            'Cookie': `JSESSIONID=${localStorage.getItem('JSESSIONID')}`,
-          },
+          headers,
+          credentials: 'include',
         });
 
         if (!response.ok) {
@@ -301,7 +303,7 @@ export function CornerstoneViewer() {
     };
 
     fetchAllFiles();
-  }, [client, experimentId, scanId]);
+  }, [client, config, experimentId, scanId]);
 
   // Load volume when initialized and files are available
   useEffect(() => {
@@ -343,10 +345,12 @@ export function CornerstoneViewer() {
           const fileName = allFiles[i];
           const url = `/api/xnat/data/archive/experiments/${experimentId}/scans/${scanId}/resources/DICOM/files/${fileName}`;
 
+          const sessionId = config?.jsessionid ?? localStorage.getItem(STORAGE_KEYS.JSESSIONID);
+          const headers: HeadersInit = sessionId ? { Cookie: `JSESSIONID=${sessionId}` } : {};
+
           const response = await fetch(url, {
-            headers: {
-              'Cookie': `JSESSIONID=${localStorage.getItem('JSESSIONID')}`,
-            },
+            headers,
+            credentials: 'include',
           });
 
           if (!response.ok) {
@@ -539,7 +543,7 @@ export function CornerstoneViewer() {
     };
 
     loadVolume();
-  }, [isInitialized, allFiles, experimentId, scanId]);
+  }, [isInitialized, allFiles, experimentId, scanId, config]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
