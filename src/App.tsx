@@ -32,6 +32,7 @@ import { ApiExplorer } from './components/ApiExplorer';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Prearchive } from './components/Prearchive';
 import { CompressedUploader } from './components/CompressedUploader';
+import { CornerstoneViewer } from './components/CornerstoneViewer';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -65,6 +66,7 @@ function AppContent() {
         <Route path="/experiments" element={<Experiments />} />
         <Route path="/experiments/:project/:subject/:experiment/scans" element={<Scans />} />
         <Route path="/experiments/:project/:subject/:experiment/viewer" element={<OhifViewer />} />
+        <Route path="/experiments/:experimentId/scans/:scanId/cornerstone" element={<CornerstoneViewer />} />
         <Route path="/experiments/:project/:subject/:experiment" element={<ExperimentDetail />} />
         <Route path="/prearchive" element={<Prearchive />} />
         <Route path="/processing" element={<Processing />} />

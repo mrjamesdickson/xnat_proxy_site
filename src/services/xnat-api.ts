@@ -1446,7 +1446,8 @@ export class XnatApiClient {
 
   async ping(): Promise<boolean> {
     try {
-      await this.client.get('/data/version');
+      // Use /data/JSESSION instead of /data/version (which returns 404 on some servers)
+      await this.client.get('/data/JSESSION');
       return true;
     } catch {
       return false;

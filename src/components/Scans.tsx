@@ -15,7 +15,8 @@ import {
   FileText,
   Maximize2,
   Minimize2,
-  X
+  X,
+  Microscope
 } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
@@ -370,6 +371,14 @@ export function Scans() {
                         <FileText className="h-3 w-3 mr-1" />
                         Headers
                       </button>
+
+                      <Link
+                        to={`/experiments/${experimentId}/scans/${scan.id}/cornerstone`}
+                        className="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                      >
+                        <Microscope className="h-3 w-3 mr-1" />
+                        Cornerstone
+                      </Link>
 
                       <button className="inline-flex items-center text-xs font-medium text-green-600 hover:text-green-500">
                         <Download className="h-3 w-3 mr-1" />
