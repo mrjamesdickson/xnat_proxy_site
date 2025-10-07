@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, Copy, Loader2, RefreshCcw, X } from 'lucide-react';
+import { AlertCircle, Copy, Loader2, RefreshCcw, X, FileText } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatContainer } from '../services/xnat-api';
+import { WorkflowContainerLogsModal } from './WorkflowContainerLogs';
 
 interface WorkflowContainerSummaryModalProps {
   containerId: string | null;
@@ -69,6 +70,8 @@ const toList = (value: unknown): string[] => {
 
 export function WorkflowContainerSummaryModal({ containerId, onClose }: WorkflowContainerSummaryModalProps) {
   const { client } = useXnat();
+  const [showStdout, setShowStdout] = useState(false);
+  const [showStderr, setShowStderr] = useState(false);
 
   const {
     data: container = null,
@@ -156,9 +159,9 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
               aria-label="Close container summary"
             >
               <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+           </button>
+         </div>
+       </div>
 
         <div className="flex-1 overflow-y-auto p-4">
           {isLoading ? (
@@ -220,6 +223,25 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
                 </div>
               )}
 
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowStdout(true)}
+                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  <FileText className="mr-2 h-3.5 w-3.5" />
+                  View StdOut.log
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStderr(true)}
+                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                >
+                  <FileText className="mr-2 h-3.5 w-3.5" />
+                  View StdErr.log
+                </button>
+              </div>
+
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-gray-900">Raw Container Payload</h3>
                 <div className="overflow-x-auto rounded-md border border-gray-100 bg-gray-50 p-4 text-xs text-gray-700">
@@ -232,8 +254,18 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
           )}
         </div>
       </div>
+      <WorkflowContainerLogsModal
+        containerId={showStdout ? containerId : null}
+        logType="stdout"
+        onClose={() => setShowStdout(false)}
+      />
+      <WorkflowContainerLogsModal
+        containerId={showStderr ? containerId : null}
+        logType="stderr"
+        onClose={() => setShowStderr(false)}
+      />
     </div>
-  );
+ );
 }
 
 export default WorkflowContainerSummaryModal;
