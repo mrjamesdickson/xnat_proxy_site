@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, RefreshCcw, FileText, Clock, AlertCircle, FolderSearch } from 'lucide-react';
+import { ArrowLeft, RefreshCcw, FileText, Clock, AlertCircle, FolderSearch, Eye } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatWorkflow } from '../services/xnat-api';
 import { WorkflowBuildDirModal } from './WorkflowBuildDir';
+import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { getWorkflowContainerId } from '../utils/workflows';
 
 const normalizeStatus = (status?: string): string => status?.toLowerCase().replace(/[_\s-]+/g, '') ?? '';
 
@@ -58,6 +60,7 @@ export function WorkflowDetail() {
   const { workflowId } = useParams();
   const { client } = useXnat();
   const [showBuildDir, setShowBuildDir] = useState(false);
+  const [showContainerSummary, setShowContainerSummary] = useState(false);
 
   const { data, isLoading, isError, refetch, error } = useQuery<XnatWorkflow | null>({
     queryKey: ['workflow-detail', workflowId],
@@ -108,6 +111,8 @@ export function WorkflowDetail() {
     ];
   }, [data]);
 
+  const containerId = useMemo(() => getWorkflowContainerId(data), [data]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -137,6 +142,16 @@ export function WorkflowDetail() {
               >
                 <FolderSearch className="h-4 w-4 mr-1" />
                 Build Dir
+              </button>
+            )}
+            {containerId && (
+              <button
+                type="button"
+                onClick={() => setShowContainerSummary(true)}
+                className="inline-flex items-center rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+              >
+                <Eye className="h-4 w-4 mr-1" />
+                Summary
               </button>
             )}
           </div>
@@ -234,6 +249,10 @@ export function WorkflowDetail() {
       <WorkflowBuildDirModal
         workflowId={showBuildDir && workflowId ? workflowId : null}
         onClose={() => setShowBuildDir(false)}
+      />
+      <WorkflowContainerSummaryModal
+        containerId={showContainerSummary ? containerId ?? null : null}
+        onClose={() => setShowContainerSummary(false)}
       />
     </div>
   );

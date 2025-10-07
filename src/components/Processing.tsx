@@ -12,6 +12,7 @@ import {
   Cpu,
   FileText,
   FolderSearch,
+  Eye,
   Grid3x3,
   HardDrive,
   List,
@@ -25,6 +26,9 @@ import {
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatContainer, XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
+import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { getWorkflowContainerId } from '../utils/workflows';
 
 const TIMEFRAME_OPTIONS = [
   { label: 'Last 7 Days', value: 7 },
@@ -218,6 +222,7 @@ export function Processing() {
   const [pageSize, setPageSize] = useState(25);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -629,18 +634,19 @@ export function Processing() {
                     const status = getWorkflowStatus(workflow);
                     const launchDate = getWorkflowLaunchDate(workflow);
                     const percent = getWorkflowPercent(workflow);
-                    const details = getWorkflowDetails(workflow);
-                    const project = getWorkflowProject(workflow);
-                    const step = getWorkflowStep(workflow);
-                    const label = getWorkflowLabel(workflow);
-                    const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
-                    const workflowKey = rawId ? String(rawId) : '';
-                    const rowKey = workflowKey || `${label}-${index}`;
-                    const workflowName = getWorkflowName(workflow);
-                    const workflowUser = getWorkflowUser(workflow) || '—';
+                  const details = getWorkflowDetails(workflow);
+                  const project = getWorkflowProject(workflow);
+                  const step = getWorkflowStep(workflow);
+                  const label = getWorkflowLabel(workflow);
+                  const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
+                  const workflowKey = rawId ? String(rawId) : '';
+                  const rowKey = workflowKey || `${label}-${index}`;
+                  const workflowName = getWorkflowName(workflow);
+                  const workflowUser = getWorkflowUser(workflow) || '—';
+                  const containerId = getWorkflowContainerId(workflow);
 
-                    return (
-                      <tr key={rowKey} className="hover:bg-gray-50">
+                  return (
+                    <tr key={rowKey} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {project || '—'}
                         </td>
@@ -669,6 +675,19 @@ export function Processing() {
                               <FolderSearch className="h-3 w-3" />
                               Build Dir
                             </button>
+                            {containerId && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContainerId(containerId)}
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  Summary
+                                </button>
+                              </>
+                            )}
                             <span className="text-gray-300">•</span>
                             <Link
                               to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -789,6 +808,7 @@ export function Processing() {
                   const cardKey = workflowKey || `${label}-${index}`;
                   const workflowName = getWorkflowName(workflow);
                   const workflowUser = getWorkflowUser(workflow) || '—';
+                  const containerId = getWorkflowContainerId(workflow);
 
                   return (
                     <div key={cardKey} className="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
@@ -821,6 +841,19 @@ export function Processing() {
                             <FolderSearch className="h-3 w-3" />
                             Build Dir
                           </button>
+                          {containerId && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedContainerId(containerId)}
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                              >
+                                <Eye className="h-3 w-3" />
+                                Summary
+                              </button>
+                            </>
+                          )}
                           <span className="text-gray-300">•</span>
                           <Link
                             to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -983,6 +1016,10 @@ export function Processing() {
       <WorkflowBuildDirModal
         workflowId={selectedBuildDirWorkflowId}
         onClose={() => setSelectedBuildDirWorkflowId(null)}
+      />
+      <WorkflowContainerSummaryModal
+        containerId={selectedContainerId}
+        onClose={() => setSelectedContainerId(null)}
       />
     </div>
   );
