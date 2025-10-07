@@ -97,6 +97,11 @@ export class DicomAnonymizer {
       console.log('Input file size:', arrayBuffer.byteLength);
       console.log('Using script:', script);
 
+      // Normalize script formatting for dicomedit parser compatibility
+      script = script
+        .replace(/\r\n/g, '\n')
+        .replace(/^\/\/\-/gm, '// -');
+
       // Create anonymizer with script
       const anonymizer = new Anonymizer(script);
 

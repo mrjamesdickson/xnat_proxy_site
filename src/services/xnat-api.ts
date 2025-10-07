@@ -65,6 +65,7 @@ export interface XnatSubject {
   gestational_age?: string;
   post_menstrual_age?: string;
   birth_weight?: string;
+  num_experiments?: number;
 }
 
 export interface XnatProjectAccess {
@@ -318,6 +319,16 @@ export interface XnatWorkflow {
   details?: string | Record<string, unknown>;
   comments?: string;
   justification?: string;
+  [key: string]: unknown;
+}
+
+export interface WorkflowBuildDirNode {
+  id: string;
+  text: string;
+  path?: string;
+  type?: 'file' | 'folder';
+  children?: WorkflowBuildDirNode[] | boolean;
+  download_link?: string;
   [key: string]: unknown;
 }
 
@@ -1040,7 +1051,7 @@ export class XnatApiClient {
     }));
   }
 
-  getScanThumbnailUrl(projectId: string, subjectId: string, experimentId: string, scanId: string): string {
+  getScanThumbnailUrl(projectId: string, _subjectId: string, experimentId: string, scanId: string): string {
     // Use the correct XAPI endpoint for scan snapshots
     const path = `/xapi/projects/${projectId}/experiments/${experimentId}/scan/${scanId}/snapshot`;
     return this.buildUrl(path);
@@ -1631,6 +1642,62 @@ export class XnatApiClient {
       console.error('Error fetching workflow:', error);
       return null;
     }
+  }
+
+  async getWorkflowBuildDir(workflowId: string, path?: string): Promise<WorkflowBuildDirNode[]> {
+    try {
+      const url = path
+        ? `/xapi/workflows/${workflowId}/build_dir_contd`
+        : `/xapi/workflows/${workflowId}/build_dir`;
+      const response = await this.client.get(url, {
+        params: path ? { inputPath: path } : undefined,
+      });
+      const data = response.data;
+      if (Array.isArray(data)) {
+        return data as WorkflowBuildDirNode[];
+      }
+      if (Array.isArray(data?.items)) {
+        return data.items as WorkflowBuildDirNode[];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error fetching workflow build directory:', error);
+      return [];
+    }
+  }
+
+  async getWorkflowLog(workflowId: string): Promise<string> {
+    const tryFetch = async (path: string) => {
+      const response = await this.client.get(path, {
+        responseType: 'text',
+      });
+      return typeof response.data === 'string' ? response.data : '';
+    };
+
+    const paths = [
+      `/xapi/workflows/${workflowId}/log`,
+      `/data/workflows/${workflowId}/log`,
+    ];
+
+    for (const path of paths) {
+      try {
+        const data = await tryFetch(path);
+        if (data) {
+          return data;
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+          if (status && ![404, 500].includes(status)) {
+            console.warn(`Workflow log request failed for ${path} with status ${status}`);
+          }
+        } else {
+          console.warn(`Workflow log request failed for ${path}:`, error);
+        }
+      }
+    }
+
+    return '';
   }
 
   async getContainerLogs(containerId: string, logType: 'stdout' | 'stderr' = 'stdout'): Promise<string> {

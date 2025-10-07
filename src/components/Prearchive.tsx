@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
 import { useState } from 'react';
-import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2, Grid3x3, List } from 'lucide-react';
+import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2 } from 'lucide-react';
 import type { XnatPrearchiveSession, XnatPrearchiveScan } from '../services/xnat-api';
 // @ts-ignore - dcmjs doesn't have TypeScript definitions
 import * as dcmjs from 'dcmjs';

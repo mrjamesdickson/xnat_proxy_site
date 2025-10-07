@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { SVGProps } from 'react';
+import type { SVGProps, ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
 import type {
@@ -83,7 +83,7 @@ const parseTimestamp = (value?: string): number => {
   return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp;
 };
 
-type IconComponent = (props: SVGProps<SVGSVGElement>) => JSX.Element;
+type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 interface WorkflowMeta {
   Icon: IconComponent;
@@ -168,7 +168,12 @@ export function LegacyIndex() {
     refetch: refetchCounts,
   } = useQuery<XnatTotalCounts>({
     queryKey: ['total-counts', baseUrl],
-    queryFn: () => client.getTotalCounts(),
+    queryFn: () => {
+      if (!client) {
+        throw new Error('XNAT client is not initialized');
+      }
+      return client.getTotalCounts();
+    },
     enabled: Boolean(client),
     refetchOnWindowFocus: false,
   });
@@ -178,7 +183,12 @@ export function LegacyIndex() {
     isLoading: projectsLoading,
   } = useQuery<XnatProjectSummaryResponse>({
     queryKey: ['home-projects', baseUrl],
-    queryFn: () => client.getProjectsSummary({ accessible: true, traditional: true }),
+    queryFn: () => {
+      if (!client) {
+        throw new Error('XNAT client is not initialized');
+      }
+      return client.getProjectsSummary({ accessible: true, traditional: true });
+    },
     enabled: Boolean(client),
     refetchOnWindowFocus: false,
   });
@@ -188,7 +198,12 @@ export function LegacyIndex() {
     isLoading: experimentsLoading,
   } = useQuery<XnatExperimentSummary[]>({
     queryKey: ['recent-experiments', baseUrl],
-    queryFn: () => client.getRecentExperiments(20),
+    queryFn: () => {
+      if (!client) {
+        throw new Error('XNAT client is not initialized');
+      }
+      return client.getRecentExperiments(20);
+    },
     enabled: Boolean(client),
     refetchOnWindowFocus: false,
   });

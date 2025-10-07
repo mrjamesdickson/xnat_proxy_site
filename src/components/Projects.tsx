@@ -11,7 +11,9 @@ import {
   FileImage,
   Eye,
   Calendar,
-  User
+  User,
+  Grid3x3,
+  List
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
@@ -25,6 +27,7 @@ export function Projects() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   const { data: projects, isLoading, error } = useQuery({
     queryKey: ['projects'],
@@ -80,7 +83,34 @@ export function Projects() {
             Manage your XNAT projects and their data.
           </p>
         </div>
-        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <div className="mt-4 sm:ml-16 sm:mt-0 flex items-center gap-3">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                viewMode === 'grid'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
@@ -108,21 +138,40 @@ export function Projects() {
         </div>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects Content */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded mb-4" />
-              <div className="h-3 bg-gray-200 rounded mb-2 w-3/4" />
-              <div className="h-3 bg-gray-200 rounded w-1/2" />
-              <div className="mt-4 flex justify-between">
-                <div className="h-3 bg-gray-200 rounded w-16" />
-                <div className="h-3 bg-gray-200 rounded w-16" />
-              </div>
+        viewMode === 'table' ? (
+          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden p-6">
+            <div className="animate-pulse space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-4">
+                  <div className="h-10 w-10 bg-gray-200 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-200 rounded w-1/4" />
+                    <div className="h-3 bg-gray-200 rounded w-1/3" />
+                  </div>
+                  <div className="h-4 bg-gray-200 rounded w-20" />
+                  <div className="h-4 bg-gray-200 rounded w-24" />
+                  <div className="h-4 bg-gray-200 rounded w-16" />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded mb-4" />
+                <div className="h-3 bg-gray-200 rounded mb-2 w-3/4" />
+                <div className="h-3 bg-gray-200 rounded w-1/2" />
+                <div className="mt-4 flex justify-between">
+                  <div className="h-3 bg-gray-200 rounded w-16" />
+                  <div className="h-3 bg-gray-200 rounded w-16" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : filteredProjects.length === 0 ? (
         <div className="text-center py-12">
           <Folder className="mx-auto h-12 w-12 text-gray-400" />
@@ -147,6 +196,112 @@ export function Projects() {
               </button>
             </div>
           )}
+        </div>
+      ) : viewMode === 'table' ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Project
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Description
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Principal Investigator
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Accessibility
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Last Modified
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredProjects.map((project) => (
+                  <tr key={getProjectId(project)} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <Folder className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div className="ml-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {project.name || getProjectId(project)}
+                          </div>
+                          <div className="text-sm text-gray-500">{getProjectId(project)}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs">
+                      <span className="line-clamp-2">
+                        {project.description || 'No description available'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {project.pi_firstname && project.pi_lastname
+                        ? `${project.pi_firstname} ${project.pi_lastname}`
+                        : 'No PI assigned'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={clsx(
+                          'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize',
+                          project.accessibility === 'public'
+                            ? 'bg-green-100 text-green-800'
+                            : project.accessibility === 'protected'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        )}
+                      >
+                        {project.accessibility || 'private'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {project.last_modified
+                        ? new Date(project.last_modified).toLocaleDateString()
+                        : '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-3">
+                        <Link
+                          to={`/projects/${getProjectId(project)}`}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          to={`/subjects?project=${getProjectId(project)}`}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Users className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          to={`/experiments?project=${getProjectId(project)}`}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <FileImage className="h-4 w-4" />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProject(project)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

@@ -18,14 +18,24 @@ export function Dashboard() {
 
   const { data: counts, isLoading: countsLoading } = useQuery<XnatTotalCounts>({
     queryKey: ['dashboard-counts', baseUrl],
-    queryFn: () => client.getTotalCounts(),
+    queryFn: () => {
+      if (!client) {
+        throw new Error('XNAT client is not initialized');
+      }
+      return client.getTotalCounts();
+    },
     enabled: Boolean(client),
     refetchOnWindowFocus: false,
   });
 
   const { data: projectSummary, isLoading: projectsLoading } = useQuery<XnatProjectSummaryResponse>({
     queryKey: ['dashboard-projects', baseUrl],
-    queryFn: () => client.getProjectsSummary({ accessible: true, traditional: true, limit: 5 }),
+    queryFn: () => {
+      if (!client) {
+        throw new Error('XNAT client is not initialized');
+      }
+      return client.getProjectsSummary({ accessible: true, traditional: true, limit: 5 });
+    },
     enabled: Boolean(client),
     refetchOnWindowFocus: false,
   });

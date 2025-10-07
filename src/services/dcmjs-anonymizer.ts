@@ -143,8 +143,8 @@ export class DcmjsAnonymizer {
       const file = files[i];
       onProgress?.(i + 1, files.length, `Anonymizing ${file.name}...`);
 
-      const anonymizedBlob = await this.anonymizeFile(file, (msg) => {
-        onProgress?.(i + 1, files.length, msg);
+      const anonymizedBlob = await this.anonymizeFile(file, undefined, (message: string) => {
+        onProgress?.(i + 1, files.length, message);
       });
 
       anonymizedFiles.push(anonymizedBlob);
