@@ -62,7 +62,8 @@ const fetchBuildDirNodes = async (
 ): Promise<WorkflowBuildDirNode[]> => {
   const maybeFn = (apiClient as unknown as Record<string, unknown>).getWorkflowBuildDir;
   if (typeof maybeFn === 'function') {
-    return (maybeFn as (workflowId: string, path?: string) => Promise<WorkflowBuildDirNode[]>)(workflowId, path);
+    return (maybeFn as (this: XnatApiClient, workflowId: string, path?: string) => Promise<WorkflowBuildDirNode[]>)
+      .call(apiClient, workflowId, path);
   }
 
   const endpoint = path
