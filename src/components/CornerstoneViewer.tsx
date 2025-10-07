@@ -5,8 +5,7 @@ import {
   RenderingEngine,
   Enums,
   init as csInit,
-  imageLoader,
-  cache
+  imageLoader
 } from '@cornerstonejs/core';
 import { init as csToolsInit } from '@cornerstonejs/tools';
 import dicomParser from 'dicom-parser';
@@ -89,7 +88,7 @@ export function CornerstoneViewer() {
 
         // Register custom DICOM image loader
         const customImageLoader = (imageId: string) => {
-          const loadImagePromise = new Promise((resolve, reject) => {
+          const loadImagePromise = new Promise<any>((resolve, reject) => {
             try {
               const fileName = imageId.replace('dicomfile:', '');
               const arrayBuffer = imageDataCache.current.get(fileName);

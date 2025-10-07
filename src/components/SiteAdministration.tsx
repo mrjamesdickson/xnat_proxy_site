@@ -8,7 +8,6 @@ import {
   Mail,
   Zap,
   Server,
-  Database,
   Shield
 } from 'lucide-react';
 

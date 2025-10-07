@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Users, Plus, Trash2, Edit } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 
@@ -12,14 +11,9 @@ interface Group {
 
 export function AdminGroups() {
   const { client } = useXnat();
-  const queryClient = useQueryClient();
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
-  const [formData, setFormData] = useState({
-    tag: '',
-    displayName: '',
-    description: '',
-  });
+  const handleOpenCreateModal = () => {
+    console.warn('Group creation is not yet implemented in this interface.');
+  };
 
   const { data: groups = [], isLoading, error } = useQuery({
     queryKey: ['admin-groups'],
@@ -30,17 +24,6 @@ export function AdminGroups() {
     },
     enabled: !!client,
   });
-
-  const handleOpenCreateModal = () => {
-    setFormData({ tag: '', displayName: '', description: '' });
-    setEditingGroup(null);
-    setShowCreateModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setShowCreateModal(false);
-    setEditingGroup(null);
-  };
 
   return (
     <div className="space-y-6">

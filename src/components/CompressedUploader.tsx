@@ -39,6 +39,11 @@ export function CompressedUploader() {
   const [manifestSortField, setManifestSortField] = useState<'fileName' | 'tag' | 'tagName'>('fileName');
   const [manifestSortDirection, setManifestSortDirection] = useState<'asc' | 'desc'>('asc');
 
+  const manifestTotalFiles = anonymizationManifest?.totalFiles ?? 0;
+  const manifestChanges = anonymizationManifest?.changes ?? [];
+  const manifestHasChanges = manifestChanges.length > 0;
+  const isManifestUploadBlocked = manifestTotalFiles > 0 && !manifestHasChanges;
+
   // Fetch available projects
   const { data: projects = [] } = useQuery({
     queryKey: ['projects-list'],
@@ -1025,6 +1030,25 @@ export function CompressedUploader() {
             </label>
           </div>
 
+          {/* Import Handler */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Import Handler
+            </label>
+            <select
+              value={importHandler}
+              onChange={(e) => setImportHandler(e.target.value as ImportHandler)}
+              disabled={isUploading}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            >
+              <option value="DICOM-zip">DICOM ZIP</option>
+              <option value="SI">Scan Importer (SI)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Choose how XNAT should process the uploaded archive. Most users should leave this set to DICOM ZIP.
+            </p>
+          </div>
+
           {/* Enable Pixel Data Check */}
           <div>
             <label className="flex items-start gap-2">
@@ -1110,8 +1134,8 @@ export function CompressedUploader() {
                 onChange={handleFileChange}
                 disabled={isUploading}
                 multiple
-                webkitdirectory=""
-                directory=""
+                webkitdirectory
+                directory
                 className="hidden"
               />
 
@@ -1156,29 +1180,29 @@ export function CompressedUploader() {
           </div>
 
           {/* Anonymization Manifest Preview */}
-          {anonymizationManifest && !isUploading && anonymizationManifest.totalFiles > 0 && (
+          {anonymizationManifest && !isUploading && manifestTotalFiles > 0 && (
             <div className={`border rounded-lg p-4 ${
-              anonymizationManifest.changes.length > 0
+              manifestHasChanges
                 ? 'bg-blue-50 border-blue-200'
                 : 'bg-red-50 border-red-200'
             }`}>
               <div className="flex items-start gap-2">
-                {anonymizationManifest.changes.length > 0 ? (
+                {manifestHasChanges ? (
                   <FileText className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 ) : (
                   <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
                 )}
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${
-                    anonymizationManifest.changes.length > 0 ? 'text-blue-900' : 'text-red-900'
+                    manifestHasChanges ? 'text-blue-900' : 'text-red-900'
                   }`}>
-                    {anonymizationManifest.changes.length > 0 ? 'Anonymization Complete' : 'Anonymization Warning'}
+                    {manifestHasChanges ? 'Anonymization Complete' : 'Anonymization Warning'}
                   </p>
                   <p className={`text-xs mt-1 ${
-                    anonymizationManifest.changes.length > 0 ? 'text-blue-700' : 'text-red-700'
+                    manifestHasChanges ? 'text-blue-700' : 'text-red-700'
                   }`}>
-                    {anonymizationManifest.totalFiles} file(s) processed, {anonymizationManifest.changes.length} change(s) recorded
-                    {anonymizationManifest.changes.length === 0 && (
+                    {manifestTotalFiles} file(s) processed, {manifestChanges.length} change(s) recorded
+                    {manifestChanges.length === 0 && (
                       <span className="block mt-1">
                         No changes were detected. This may indicate a problem with the anonymization script or
                         the DICOM files may not contain identifiable information.
@@ -1195,16 +1219,16 @@ export function CompressedUploader() {
                       type="button"
                       onClick={() => setShowManifestDialog(true)}
                       className={`text-xs hover:underline ${
-                        anonymizationManifest.changes.length > 0
+                        manifestHasChanges
                           ? 'text-blue-700 hover:text-blue-900'
                           : 'text-red-700 hover:text-red-900'
                       }`}
                     >
-                      {anonymizationManifest.changes.length > 0 ? 'View Changes' : 'View Manifest'}
+                      {manifestHasChanges ? 'View Changes' : 'View Manifest'}
                     </button>
-                    {anonymizationManifest.changes.length > 0 && (
+                    {manifestHasChanges && (
                       <>
-                        <span className={anonymizationManifest.changes.length > 0 ? 'text-blue-400' : 'text-red-400'}>•</span>
+                        <span className={manifestHasChanges ? 'text-blue-400' : 'text-red-400'}>•</span>
                         <button
                           type="button"
                           onClick={downloadManifest}
@@ -1214,12 +1238,12 @@ export function CompressedUploader() {
                         </button>
                       </>
                     )}
-                    <span className={anonymizationManifest.changes.length > 0 ? 'text-blue-400' : 'text-red-400'}>•</span>
+                    <span className={manifestHasChanges ? 'text-blue-400' : 'text-red-400'}>•</span>
                     <button
                       type="button"
                       onClick={() => setShowScriptDialog(true)}
                       className={`text-xs hover:underline ${
-                        anonymizationManifest.changes.length > 0
+                        manifestHasChanges
                           ? 'text-blue-700 hover:text-blue-900'
                           : 'text-red-700 hover:text-red-900'
                       }`}
@@ -1236,10 +1260,10 @@ export function CompressedUploader() {
           <div>
             <button
               type="submit"
-              disabled={isUploading || (anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0)}
+              disabled={isUploading || isManifestUploadBlocked}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
               title={
-                anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0
+                isManifestUploadBlocked
                   ? 'Upload blocked: Anonymization produced no changes. Please review the anonymization script.'
                   : ''
               }
@@ -1256,7 +1280,7 @@ export function CompressedUploader() {
                 </>
               )}
             </button>
-            {anonymizationManifest?.totalFiles > 0 && anonymizationManifest?.changes.length === 0 && (
+            {isManifestUploadBlocked && (
               <p className="text-xs text-red-600 mt-2">
                 Upload blocked: Anonymization produced no changes. Review the script and ensure your DICOM files contain PHI data.
               </p>
@@ -1370,7 +1394,7 @@ export function CompressedUploader() {
                     )}
                   </div>
                 </div>
-                {anonymizationManifest && anonymizationManifest.changes.length > 0 && (
+                {anonymizationManifest && manifestHasChanges && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-start gap-2">
                       <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
@@ -1379,7 +1403,7 @@ export function CompressedUploader() {
                           Anonymization Summary
                         </p>
                         <p className="text-xs text-blue-700 mt-1">
-                          {anonymizationManifest.totalFiles} file(s) processed, {anonymizationManifest.changes.length} change(s) recorded
+                          {manifestTotalFiles} file(s) processed, {manifestChanges.length} change(s) recorded
                         </p>
                       </div>
                     </div>
@@ -1551,11 +1575,11 @@ export function CompressedUploader() {
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <p className="text-blue-600 font-medium">Total Files</p>
-                    <p className="text-blue-900 text-lg font-semibold">{anonymizationManifest.totalFiles}</p>
+                    <p className="text-blue-900 text-lg font-semibold">{manifestTotalFiles}</p>
                   </div>
                   <div>
                     <p className="text-blue-600 font-medium">Changes Recorded</p>
-                    <p className="text-blue-900 text-lg font-semibold">{anonymizationManifest.changes.length}</p>
+                    <p className="text-blue-900 text-lg font-semibold">{manifestChanges.length}</p>
                   </div>
                   <div>
                     <p className="text-blue-600 font-medium">Timestamp</p>

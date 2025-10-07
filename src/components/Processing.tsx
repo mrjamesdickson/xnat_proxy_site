@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   Activity,
@@ -8,6 +9,8 @@ import {
   CheckCircle,
   Clock,
   Cpu,
+  FileText,
+  FolderSearch,
   Grid3x3,
   HardDrive,
   List,
@@ -16,6 +19,7 @@ import {
   Play,
   RefreshCw,
   Square,
+  Info,
   XCircle,
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
@@ -619,7 +623,7 @@ export function Processing() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {paginatedWorkflows.map((workflow) => {
+                  {paginatedWorkflows.map((workflow, index) => {
                     const status = getWorkflowStatus(workflow);
                     const launchDate = getWorkflowLaunchDate(workflow);
                     const percent = getWorkflowPercent(workflow);
@@ -627,22 +631,53 @@ export function Processing() {
                     const project = getWorkflowProject(workflow);
                     const step = getWorkflowStep(workflow);
                     const label = getWorkflowLabel(workflow);
-                    const workflowKey = `${workflow.wfid ?? workflow.id ?? label}`;
+                    const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
+                    const workflowKey = rawId ? String(rawId) : '';
+                    const rowKey = workflowKey || `${label}-${index}`;
                     const workflowName = getWorkflowName(workflow);
                     const workflowUser = getWorkflowUser(workflow) || '—';
 
                     return (
-                      <tr key={workflowKey} className="hover:bg-gray-50">
+                      <tr key={rowKey} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {project || '—'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{label || '—'}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm">
-                          <span className={clsx('inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-xs font-semibold', getStatusPillColor(status))}>
-                            {getStatusIcon(status)}
-                            {status || 'Unknown'}
-                          </span>
-                        </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">
+                      <div className="flex flex-col gap-1">
+                        <span className={clsx('inline-flex items-center gap-2 rounded-full px-2.5 py-0.5 text-xs font-semibold', getStatusPillColor(status))}>
+                          {getStatusIcon(status)}
+                          {status || 'Unknown'}
+                        </span>
+                        {workflowKey && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <Link
+                              to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}`}
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                            >
+                              <Info className="h-3 w-3" />
+                              Details
+                            </Link>
+                            <span className="text-gray-300">•</span>
+                            <Link
+                              to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                            >
+                              <FolderSearch className="h-3 w-3" />
+                              Build Dir
+                            </Link>
+                            <span className="text-gray-300">•</span>
+                            <Link
+                              to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                            >
+                              <FileText className="h-3 w-3" />
+                              Log
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </td>
                         <td className="px-4 py-3 text-sm text-gray-700">
                           <div className="font-medium text-gray-900">{workflowName}</div>
                           {details && (
@@ -738,7 +773,7 @@ export function Processing() {
             /* Grid View */
             <div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {paginatedWorkflows.map((workflow) => {
+                {paginatedWorkflows.map((workflow, index) => {
                   const status = getWorkflowStatus(workflow);
                   const launchDate = getWorkflowLaunchDate(workflow);
                   const percent = getWorkflowPercent(workflow);
@@ -746,12 +781,14 @@ export function Processing() {
                   const project = getWorkflowProject(workflow);
                   const step = getWorkflowStep(workflow);
                   const label = getWorkflowLabel(workflow);
-                  const workflowKey = `${workflow.wfid ?? workflow.id ?? label}`;
+                  const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
+                  const workflowKey = rawId ? String(rawId) : '';
+                  const cardKey = workflowKey || `${label}-${index}`;
                   const workflowName = getWorkflowName(workflow);
                   const workflowUser = getWorkflowUser(workflow) || '—';
 
                   return (
-                    <div key={workflowKey} className="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
+                    <div key={cardKey} className="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-gray-900 truncate">{label || '—'}</div>
@@ -762,6 +799,34 @@ export function Processing() {
                           {status || 'Unknown'}
                         </span>
                       </div>
+
+                      {workflowKey && (
+                        <div className="mb-3 flex items-center gap-3 text-xs">
+                          <Link
+                            to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}`}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                          >
+                            <Info className="h-3 w-3" />
+                            Details
+                          </Link>
+                          <span className="text-gray-300">•</span>
+                          <Link
+                            to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                          >
+                            <FolderSearch className="h-3 w-3" />
+                            Build Dir
+                          </Link>
+                          <span className="text-gray-300">•</span>
+                          <Link
+                            to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                          >
+                            <FileText className="h-3 w-3" />
+                            Log
+                          </Link>
+                        </div>
+                      )}
 
                       <div className="space-y-2 mb-3">
                         <div className="text-sm font-medium text-gray-900">{workflowName}</div>

@@ -33,6 +33,9 @@ import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { Prearchive } from './components/Prearchive';
 import { CompressedUploader } from './components/CompressedUploader';
 import { CornerstoneViewer } from './components/CornerstoneViewer';
+import { WorkflowDetail } from './components/WorkflowDetail';
+import { WorkflowLog } from './components/WorkflowLog';
+import { WorkflowBuildDir } from './components/WorkflowBuildDir';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -70,6 +73,9 @@ function AppContent() {
         <Route path="/experiments/:project/:subject/:experiment" element={<ExperimentDetail />} />
         <Route path="/prearchive" element={<Prearchive />} />
         <Route path="/processing" element={<Processing />} />
+        <Route path="/processing/workflows/:workflowId" element={<WorkflowDetail />} />
+        <Route path="/processing/workflows/:workflowId/log" element={<WorkflowLog />} />
+        <Route path="/processing/workflows/:workflowId/build" element={<WorkflowBuildDir />} />
         <Route path="/upload" element={<Upload />} />
         <Route path="/upload/compressed" element={<CompressedUploader />} />
         <Route path="/search" element={<Search />} />
