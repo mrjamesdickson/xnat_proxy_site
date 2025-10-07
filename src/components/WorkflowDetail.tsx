@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowLeft, RefreshCcw, FileText, Clock, AlertCircle, FolderSearch } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatWorkflow } from '../services/xnat-api';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 
 const normalizeStatus = (status?: string): string => status?.toLowerCase().replace(/[_\s-]+/g, '') ?? '';
 
@@ -56,6 +57,7 @@ const formatDateTime = (value?: number | string): string => {
 export function WorkflowDetail() {
   const { workflowId } = useParams();
   const { client } = useXnat();
+  const [showBuildDir, setShowBuildDir] = useState(false);
 
   const { data, isLoading, isError, refetch, error } = useQuery<XnatWorkflow | null>({
     queryKey: ['workflow-detail', workflowId],
@@ -128,13 +130,14 @@ export function WorkflowDetail() {
               </Link>
             )}
             {workflowId && (
-              <Link
-                to={`/processing/workflows/${workflowId}/build`}
+              <button
+                type="button"
+                onClick={() => setShowBuildDir(true)}
                 className="inline-flex items-center rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
               >
                 <FolderSearch className="h-4 w-4 mr-1" />
                 Build Dir
-              </Link>
+              </button>
             )}
           </div>
           <h1 className="mt-3 text-2xl font-semibold text-gray-900">Workflow Details</h1>
@@ -227,6 +230,11 @@ export function WorkflowDetail() {
           </div>
         </div>
       )}
+
+      <WorkflowBuildDirModal
+        workflowId={showBuildDir && workflowId ? workflowId : null}
+        onClose={() => setShowBuildDir(false)}
+      />
     </div>
   );
 }

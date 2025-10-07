@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 import {
   Activity,
   AlertCircle,
@@ -216,6 +217,7 @@ export function Processing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -659,13 +661,14 @@ export function Processing() {
                               Details
                             </Link>
                             <span className="text-gray-300">•</span>
-                            <Link
-                              to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
                             >
                               <FolderSearch className="h-3 w-3" />
                               Build Dir
-                            </Link>
+                            </button>
                             <span className="text-gray-300">•</span>
                             <Link
                               to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -810,13 +813,14 @@ export function Processing() {
                             Details
                           </Link>
                           <span className="text-gray-300">•</span>
-                          <Link
-                            to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                             className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
                           >
                             <FolderSearch className="h-3 w-3" />
                             Build Dir
-                          </Link>
+                          </button>
                           <span className="text-gray-300">•</span>
                           <Link
                             to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -976,6 +980,10 @@ export function Processing() {
           </div>
         )}
       </div>
+      <WorkflowBuildDirModal
+        workflowId={selectedBuildDirWorkflowId}
+        onClose={() => setSelectedBuildDirWorkflowId(null)}
+      />
     </div>
   );
 }

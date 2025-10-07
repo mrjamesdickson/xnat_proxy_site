@@ -1,12 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCcw, ArrowLeft, Download, Copy, AlertCircle } from 'lucide-react';
+import { RefreshCcw, ArrowLeft, Download, Copy, AlertCircle, FolderSearch } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 
 export function WorkflowLog() {
   const { workflowId } = useParams();
   const { client } = useXnat();
+  const [showBuildDir, setShowBuildDir] = useState(false);
 
   const {
     data: logText = '',
@@ -52,12 +54,14 @@ export function WorkflowLog() {
               Back to Workflow
             </Link>
             {workflowId && (
-              <Link
-                to={`/processing/workflows/${workflowId}/build`}
-                className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
+              <button
+                type="button"
+                onClick={() => setShowBuildDir(true)}
+                className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500"
               >
+                <FolderSearch className="h-3 w-3" />
                 Build Dir
-              </Link>
+              </button>
             )}
             <Link
               to="/processing"
@@ -123,6 +127,11 @@ export function WorkflowLog() {
           </pre>
         </div>
       )}
+
+      <WorkflowBuildDirModal
+        workflowId={showBuildDir && workflowId ? workflowId : null}
+        onClose={() => setShowBuildDir(false)}
+      />
     </div>
   );
 }
