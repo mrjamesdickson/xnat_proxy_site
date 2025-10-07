@@ -43,9 +43,10 @@ const formatDateTime = (value: unknown): string => {
 
 const extractField = (container: XnatContainer | null, keys: string[]): unknown => {
   if (!container) return undefined;
+  const record = container as unknown as Record<string, unknown>;
   for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(container, key)) {
-      const value = (container as Record<string, unknown>)[key];
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      const value = record[key];
       if (value !== undefined && value !== null && value !== '') {
         return value;
       }
@@ -70,7 +71,7 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
   const { client } = useXnat();
 
   const {
-    data: container,
+    data: container = null,
     isLoading,
     isError,
     error,

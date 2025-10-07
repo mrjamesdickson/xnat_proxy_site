@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
-import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 import {
   Activity,
   AlertCircle,
@@ -221,6 +220,13 @@ export function Processing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [filters, setFilters] = useState({
+    project: '',
+    label: '',
+    status: '',
+    user: '',
+    pipeline: '',
+  });
   const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
 
@@ -286,13 +292,47 @@ export function Processing() {
   const containers = containersQuery.data ?? [];
   const systemStats = systemQuery.data ?? null;
 
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>();
+    workflows.forEach((workflow) => {
+      const status = getWorkflowStatus(workflow);
+      if (status) {
+        set.add(status);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [workflows]);
+
+  const filteredWorkflows = useMemo(() => {
+    const projectFilter = filters.project.trim().toLowerCase();
+    const labelFilter = filters.label.trim().toLowerCase();
+    const statusFilter = filters.status.trim().toLowerCase();
+    const userFilter = filters.user.trim().toLowerCase();
+    const pipelineFilter = filters.pipeline.trim().toLowerCase();
+
+    return workflows.filter((workflow) => {
+      const project = getWorkflowProject(workflow).toLowerCase();
+      const label = getWorkflowLabel(workflow).toLowerCase();
+      const status = getWorkflowStatus(workflow).toLowerCase();
+      const user = getWorkflowUser(workflow).toLowerCase();
+      const pipeline = getWorkflowName(workflow).toLowerCase();
+
+      if (projectFilter && !project.includes(projectFilter)) return false;
+      if (labelFilter && !label.includes(labelFilter)) return false;
+      if (userFilter && !user.includes(userFilter)) return false;
+      if (pipelineFilter && !pipeline.includes(pipelineFilter)) return false;
+      if (statusFilter && status !== statusFilter) return false;
+      return true;
+    });
+  }, [workflows, filters]);
+
   const sortedWorkflows = useMemo(() => {
-    return [...workflows].sort((a, b) => {
+    return [...filteredWorkflows].sort((a, b) => {
       const dateA = getWorkflowLaunchDate(a)?.getTime() ?? 0;
       const dateB = getWorkflowLaunchDate(b)?.getTime() ?? 0;
       return dateB - dateA;
     });
-  }, [workflows]);
+  }, [filteredWorkflows]);
 
   const totalPages = useMemo(() => {
     if (sortedWorkflows.length === 0) {
@@ -353,6 +393,20 @@ export function Processing() {
   const handleChangeTimeframe = (value: number) => {
     setDays(value);
     setDismissedCallouts({ active: false, failed: false });
+  };
+
+  const hasActiveFilters = useMemo(
+    () => Object.values(filters).some((value) => value.trim().length > 0),
+    [filters]
+  );
+
+  const handleFilterChange = (name: keyof typeof filters, value: string) => {
+    setFilters((previous) => ({ ...previous, [name]: value }));
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters({ project: '', label: '', status: '', user: '', pipeline: '' });
   };
 
   if (!client) {
@@ -529,6 +583,85 @@ export function Processing() {
             </button>
           </div>
         </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Project
+            </label>
+            <input
+              type="text"
+              value={filters.project}
+              onChange={(event) => handleFilterChange('project', event.target.value)}
+              placeholder="Filter by project"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Label
+            </label>
+            <input
+              type="text"
+              value={filters.label}
+              onChange={(event) => handleFilterChange('label', event.target.value)}
+              placeholder="Filter by label"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Status
+            </label>
+            <select
+              value={filters.status}
+              onChange={(event) => handleFilterChange('status', event.target.value)}
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Pipeline
+            </label>
+            <input
+              type="text"
+              value={filters.pipeline}
+              onChange={(event) => handleFilterChange('pipeline', event.target.value)}
+              placeholder="Filter by pipeline"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              User
+            </label>
+            <input
+              type="text"
+              value={filters.user}
+              onChange={(event) => handleFilterChange('user', event.target.value)}
+              placeholder="Filter by user"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-100"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
 
         {(showActiveCallout || showFailedCallout) && (
           <div className="mt-4 space-y-3">
