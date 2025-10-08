@@ -46,7 +46,56 @@ const isFolderNode = (node: TreeNode): boolean => {
   return Boolean(node.download_link) === false;
 };
 
-const getNodeKey = (node: TreeNode): string => node.path || node.id || node.text;
+const getNodeKey = (node: TreeNode): string => {
+  const rawKey = node.path ?? node.id ?? node.text ?? node.download_link;
+  if (typeof rawKey === 'string' && rawKey.length > 0) {
+    return rawKey;
+  }
+  if (typeof rawKey === 'number') {
+    return String(rawKey);
+  }
+  return JSON.stringify({ path: node.path, id: node.id, text: node.text });
+};
+
+const sanitizeLabel = (value?: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.includes('<') || trimmed.includes('>')) {
+    const stripped = trimmed.replace(/<[^>]*>/g, '').trim();
+    return stripped.length > 0 ? stripped : undefined;
+  }
+  return trimmed;
+};
+
+const getDownloadPath = (node: TreeNode, baseUrl?: string): string | undefined => {
+  if (!node.download_link) return undefined;
+  try {
+    const absolute = new URL(node.download_link, baseUrl ?? 'http://localhost');
+    const pathParam = absolute.searchParams.get('path');
+    if (pathParam) {
+      return decodeURIComponent(pathParam);
+    }
+    const pathname = absolute.pathname;
+    return pathname ? decodeURIComponent(pathname) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const getDisplayName = (node: TreeNode, baseUrl?: string): { label: string; subtitle?: string } => {
+  const sanitized = sanitizeLabel(node.text);
+  const downloadPath = getDownloadPath(node, baseUrl);
+  const rawKey = getNodeKey(node) ?? '';
+  const keySegments = typeof rawKey === 'string' ? rawKey.split(/[\\/]/).filter(Boolean) : [];
+  const pathSegments = typeof downloadPath === 'string' ? downloadPath.split(/[\\/]/).filter(Boolean) : [];
+  const derivedLabel = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : undefined;
+  const fallbackLabel = keySegments.length > 0 ? keySegments[keySegments.length - 1] : rawKey || 'Unnamed entry';
+  const label = sanitized ?? derivedLabel ?? fallbackLabel;
+  const subtitleSource = downloadPath ?? (keySegments.length > 1 ? rawKey : undefined);
+  const subtitle = subtitleSource && subtitleSource !== label ? subtitleSource : undefined;
+  return { label, subtitle };
+};
 
 const buildDownloadHref = (href: string, baseUrl?: string): string => {
   if (/^https?:\/\//i.test(href)) {
@@ -276,13 +325,14 @@ interface TreeNodeRowProps {
 
 function TreeNodeRow({ node, onToggle, baseUrl }: TreeNodeRowProps) {
   const isFolder = isFolderNode(node);
-  const nodeKey = getNodeKey(node);
+  const { label, subtitle } = getDisplayName(node, baseUrl);
+  const downloadHref = !isFolder && node.download_link ? buildDownloadHref(node.download_link, baseUrl) : undefined;
 
   return (
     <li>
       <div
         className={clsx(
-          'flex items-center rounded-md px-2 py-1 text-sm transition-colors',
+          'flex items-start gap-2 rounded-md px-2 py-1 text-sm transition-colors',
           isFolder ? 'hover:bg-gray-50' : 'hover:bg-blue-50',
         )}
       >
@@ -290,10 +340,11 @@ function TreeNodeRow({ node, onToggle, baseUrl }: TreeNodeRowProps) {
           <button
             type="button"
             onClick={() => onToggle(node)}
-            className="mr-2 inline-flex items-center rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+            className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+            aria-label={node.isExpanded ? 'Collapse folder' : 'Expand folder'}
           >
             {node.isLoading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : node.isExpanded ? (
               <FolderOpen className="h-4 w-4" />
             ) : (
@@ -301,24 +352,41 @@ function TreeNodeRow({ node, onToggle, baseUrl }: TreeNodeRowProps) {
             )}
           </button>
         ) : (
-          <span className="mr-2 text-gray-400">
-            <FileIcon className="h-4 w-4" />
-          </span>
+          <FileIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
         )}
-        <span className="flex-1 truncate" title={node.text}>
-          {node.text || nodeKey}
-        </span>
-        {!isFolder && node.download_link && (
-          <a
-            className="ml-2 inline-flex items-center rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
-            href={buildDownloadHref(node.download_link, baseUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Download className="mr-1 h-3 w-3" />
-            Download
-          </a>
-        )}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {isFolder ? (
+            <button
+              type="button"
+              onClick={() => onToggle(node)}
+              className="w-full truncate text-left font-medium text-gray-800 hover:underline"
+              title={label}
+            >
+              {label}
+            </button>
+          ) : downloadHref ? (
+            <a
+              className="inline-flex items-center gap-1 truncate font-medium text-blue-600 hover:text-blue-500 hover:underline"
+              href={downloadHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              download
+              title={label}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="truncate">{label}</span>
+            </a>
+          ) : (
+            <span className="truncate font-medium text-gray-800" title={label}>
+              {label}
+            </span>
+          )}
+          {subtitle && subtitle !== label && (
+            <span className="truncate text-xs text-gray-500" title={subtitle}>
+              {subtitle}
+            </span>
+          )}
+        </div>
       </div>
       {isFolder && node.isExpanded && Array.isArray(node.children) && node.children.length > 0 && (
         <div className="ml-6 mt-1">

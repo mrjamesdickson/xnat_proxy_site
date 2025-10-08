@@ -24,6 +24,14 @@
     @apply bg-gray-50 text-gray-900 antialiased transition-colors duration-300;
   }
 
+  #root {
+    width: 100%;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
 html.dark body {
   @apply bg-slate-950 text-gray-100;
 }
