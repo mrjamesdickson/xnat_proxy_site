@@ -1119,30 +1119,39 @@ export function Processing() {
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-4">
-            {containers.slice(0, 5).map((container: XnatContainer) => (
-              <div key={container.id} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(container.status)}
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {container['parent-source-object-name'] || container['docker-image'] || container.id}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {container['user-id']}
-                        {container['project-id'] ? ` • ${container['project-id']}` : ''}
+            {containers.slice(0, 5).map((container: XnatContainer, index) => {
+              const status = typeof container.status === 'string' && container.status.trim().length > 0 ? container.status : 'Unknown';
+              const statusTimeRaw = container['status-time'];
+              const statusDate = typeof statusTimeRaw === 'string' && statusTimeRaw.length > 0 ? new Date(statusTimeRaw) : undefined;
+              const containerKey = container.id ?? container['container-id'] ?? container['workflow-id'] ?? index;
+              const displayName =
+                (typeof container['parent-source-object-name'] === 'string' && container['parent-source-object-name']) ||
+                (typeof container['docker-image'] === 'string' && container['docker-image']) ||
+                (typeof container.id === 'string' || typeof container.id === 'number' ? String(container.id) : 'Container');
+              const userId = typeof container['user-id'] === 'string' ? container['user-id'] : '—';
+              const projectId = typeof container['project-id'] === 'string' ? container['project-id'] : '';
+
+              return (
+                <div key={String(containerKey)} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {getStatusIcon(status)}
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{displayName}</div>
+                        <div className="text-xs text-gray-500">
+                          {userId}
+                          {projectId ? ` • ${projectId}` : ''}
+                        </div>
                       </div>
                     </div>
+                    <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(status))}>
+                      {status}
+                    </span>
                   </div>
-                  <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(container.status))}>
-                    {container.status}
-                  </span>
+                  <div className="mt-2 text-xs text-gray-500">Updated {formatDate(statusDate)}</div>
                 </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  Updated {formatDate(new Date(container['status-time']))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

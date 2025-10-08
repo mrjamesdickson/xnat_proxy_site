@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, RefreshCcw, X } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
+import type { XnatContainerLogResponse } from '../services/xnat-api';
 
 interface WorkflowContainerLogsModalProps {
   containerId: string | null;
@@ -11,18 +12,57 @@ interface WorkflowContainerLogsModalProps {
 
 export function WorkflowContainerLogsModal({ containerId, logType, onClose }: WorkflowContainerLogsModalProps) {
   const { client } = useXnat();
+  const [logText, setLogText] = useState('');
+  const lastTimestampRef = useRef<string | null>(null);
 
   const {
-    data: logText = '',
+    data: logChunk,
     isLoading,
+    isFetching,
     isError,
     error,
     refetch,
-  } = useQuery<string>({
+  } = useQuery<XnatContainerLogResponse>({
     queryKey: ['container-log', containerId, logType],
-    queryFn: () => (client && containerId ? client.getContainerLogs(containerId, logType) : Promise.resolve('')),
+    queryFn: () => (
+      client && containerId
+        ? client.getContainerLogs(containerId, logType, { since: lastTimestampRef.current ?? '-1' })
+        : Promise.resolve<XnatContainerLogResponse>({ content: '', timestamp: null })
+    ),
     enabled: Boolean(client) && Boolean(containerId),
+    refetchOnWindowFocus: false,
+    refetchInterval: containerId ? 5000 : false,
+    refetchIntervalInBackground: Boolean(containerId),
   });
+
+  useEffect(() => {
+    setLogText('');
+    lastTimestampRef.current = null;
+  }, [containerId, logType]);
+
+  useEffect(() => {
+    if (!logChunk) return;
+
+    const content = typeof logChunk.content === 'string' ? logChunk.content : '';
+    const timestamp = logChunk.timestamp ?? null;
+    const previousTimestamp = lastTimestampRef.current;
+
+    if (!previousTimestamp || previousTimestamp === '-1') {
+      setLogText(content);
+    } else if (content) {
+      setLogText((prev) => {
+        if (!prev) return content;
+        const needsNewline = !prev.endsWith('\n') && !content.startsWith('\n');
+        return `${prev}${needsNewline ? '\n' : ''}${content}`;
+      });
+    }
+
+    if (timestamp !== undefined && timestamp !== null) {
+      lastTimestampRef.current = timestamp;
+    } else if (previousTimestamp === null) {
+      lastTimestampRef.current = '-1';
+    }
+  }, [logChunk]);
 
   useEffect(() => {
     if (!containerId) return undefined;
@@ -54,11 +94,11 @@ export function WorkflowContainerLogsModal({ containerId, logType, onClose }: Wo
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => refetch()}
-              disabled={isLoading}
+              onClick={() => { void refetch(); }}
+              disabled={isFetching}
               className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-2 h-3.5 w-3.5" />}
+              {isFetching ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-2 h-3.5 w-3.5" />}
               Refresh
             </button>
             <button
