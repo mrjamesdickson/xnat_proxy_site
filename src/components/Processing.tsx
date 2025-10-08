@@ -11,6 +11,7 @@ import {
   Cpu,
   FileText,
   FolderSearch,
+  Eye,
   Grid3x3,
   HardDrive,
   List,
@@ -24,6 +25,9 @@ import {
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatContainer, XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
+import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { getWorkflowContainerId } from '../utils/workflows';
 
 const TIMEFRAME_OPTIONS = [
   { label: 'Last 7 Days', value: 7 },
@@ -216,6 +220,15 @@ export function Processing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [filters, setFilters] = useState({
+    project: '',
+    label: '',
+    status: '',
+    user: '',
+    pipeline: '',
+  });
+  const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -279,13 +292,47 @@ export function Processing() {
   const containers = containersQuery.data ?? [];
   const systemStats = systemQuery.data ?? null;
 
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>();
+    workflows.forEach((workflow) => {
+      const status = getWorkflowStatus(workflow);
+      if (status) {
+        set.add(status);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [workflows]);
+
+  const filteredWorkflows = useMemo(() => {
+    const projectFilter = filters.project.trim().toLowerCase();
+    const labelFilter = filters.label.trim().toLowerCase();
+    const statusFilter = filters.status.trim().toLowerCase();
+    const userFilter = filters.user.trim().toLowerCase();
+    const pipelineFilter = filters.pipeline.trim().toLowerCase();
+
+    return workflows.filter((workflow) => {
+      const project = getWorkflowProject(workflow).toLowerCase();
+      const label = getWorkflowLabel(workflow).toLowerCase();
+      const status = getWorkflowStatus(workflow).toLowerCase();
+      const user = getWorkflowUser(workflow).toLowerCase();
+      const pipeline = getWorkflowName(workflow).toLowerCase();
+
+      if (projectFilter && !project.includes(projectFilter)) return false;
+      if (labelFilter && !label.includes(labelFilter)) return false;
+      if (userFilter && !user.includes(userFilter)) return false;
+      if (pipelineFilter && !pipeline.includes(pipelineFilter)) return false;
+      if (statusFilter && status !== statusFilter) return false;
+      return true;
+    });
+  }, [workflows, filters]);
+
   const sortedWorkflows = useMemo(() => {
-    return [...workflows].sort((a, b) => {
+    return [...filteredWorkflows].sort((a, b) => {
       const dateA = getWorkflowLaunchDate(a)?.getTime() ?? 0;
       const dateB = getWorkflowLaunchDate(b)?.getTime() ?? 0;
       return dateB - dateA;
     });
-  }, [workflows]);
+  }, [filteredWorkflows]);
 
   const totalPages = useMemo(() => {
     if (sortedWorkflows.length === 0) {
@@ -346,6 +393,20 @@ export function Processing() {
   const handleChangeTimeframe = (value: number) => {
     setDays(value);
     setDismissedCallouts({ active: false, failed: false });
+  };
+
+  const hasActiveFilters = useMemo(
+    () => Object.values(filters).some((value) => value.trim().length > 0),
+    [filters]
+  );
+
+  const handleFilterChange = (name: keyof typeof filters, value: string) => {
+    setFilters((previous) => ({ ...previous, [name]: value }));
+    setCurrentPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters({ project: '', label: '', status: '', user: '', pipeline: '' });
   };
 
   if (!client) {
@@ -523,6 +584,85 @@ export function Processing() {
           </div>
         </div>
 
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Project
+            </label>
+            <input
+              type="text"
+              value={filters.project}
+              onChange={(event) => handleFilterChange('project', event.target.value)}
+              placeholder="Filter by project"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Label
+            </label>
+            <input
+              type="text"
+              value={filters.label}
+              onChange={(event) => handleFilterChange('label', event.target.value)}
+              placeholder="Filter by label"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Status
+            </label>
+            <select
+              value={filters.status}
+              onChange={(event) => handleFilterChange('status', event.target.value)}
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Pipeline
+            </label>
+            <input
+              type="text"
+              value={filters.pipeline}
+              onChange={(event) => handleFilterChange('pipeline', event.target.value)}
+              placeholder="Filter by pipeline"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              User
+            </label>
+            <input
+              type="text"
+              value={filters.user}
+              onChange={(event) => handleFilterChange('user', event.target.value)}
+              placeholder="Filter by user"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-100"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+
         {(showActiveCallout || showFailedCallout) && (
           <div className="mt-4 space-y-3">
             {showActiveCallout && (
@@ -627,18 +767,19 @@ export function Processing() {
                     const status = getWorkflowStatus(workflow);
                     const launchDate = getWorkflowLaunchDate(workflow);
                     const percent = getWorkflowPercent(workflow);
-                    const details = getWorkflowDetails(workflow);
-                    const project = getWorkflowProject(workflow);
-                    const step = getWorkflowStep(workflow);
-                    const label = getWorkflowLabel(workflow);
-                    const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
-                    const workflowKey = rawId ? String(rawId) : '';
-                    const rowKey = workflowKey || `${label}-${index}`;
-                    const workflowName = getWorkflowName(workflow);
-                    const workflowUser = getWorkflowUser(workflow) || '—';
+                  const details = getWorkflowDetails(workflow);
+                  const project = getWorkflowProject(workflow);
+                  const step = getWorkflowStep(workflow);
+                  const label = getWorkflowLabel(workflow);
+                  const rawId = workflow.wfid ?? workflow.id ?? (workflow as Record<string, unknown>).ID ?? label;
+                  const workflowKey = rawId ? String(rawId) : '';
+                  const rowKey = workflowKey || `${label}-${index}`;
+                  const workflowName = getWorkflowName(workflow);
+                  const workflowUser = getWorkflowUser(workflow) || '—';
+                  const containerId = getWorkflowContainerId(workflow);
 
-                    return (
-                      <tr key={rowKey} className="hover:bg-gray-50">
+                  return (
+                    <tr key={rowKey} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {project || '—'}
                         </td>
@@ -659,13 +800,27 @@ export function Processing() {
                               Details
                             </Link>
                             <span className="text-gray-300">•</span>
-                            <Link
-                              to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
                             >
                               <FolderSearch className="h-3 w-3" />
                               Build Dir
-                            </Link>
+                            </button>
+                            {containerId && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContainerId(containerId)}
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  Summary
+                                </button>
+                              </>
+                            )}
                             <span className="text-gray-300">•</span>
                             <Link
                               to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -786,6 +941,7 @@ export function Processing() {
                   const cardKey = workflowKey || `${label}-${index}`;
                   const workflowName = getWorkflowName(workflow);
                   const workflowUser = getWorkflowUser(workflow) || '—';
+                  const containerId = getWorkflowContainerId(workflow);
 
                   return (
                     <div key={cardKey} className="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-md transition-shadow">
@@ -810,13 +966,27 @@ export function Processing() {
                             Details
                           </Link>
                           <span className="text-gray-300">•</span>
-                          <Link
-                            to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/build`}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                             className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
                           >
                             <FolderSearch className="h-3 w-3" />
                             Build Dir
-                          </Link>
+                          </button>
+                          {containerId && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedContainerId(containerId)}
+                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                              >
+                                <Eye className="h-3 w-3" />
+                                Summary
+                              </button>
+                            </>
+                          )}
                           <span className="text-gray-300">•</span>
                           <Link
                             to={`/processing/workflows/${encodeURIComponent(String(workflowKey))}/log`}
@@ -949,33 +1119,50 @@ export function Processing() {
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-4">
-            {containers.slice(0, 5).map((container: XnatContainer) => (
-              <div key={container.id} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(container.status)}
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {container['parent-source-object-name'] || container['docker-image'] || container.id}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {container['user-id']}
-                        {container['project-id'] ? ` • ${container['project-id']}` : ''}
+            {containers.slice(0, 5).map((container: XnatContainer, index) => {
+              const status = typeof container.status === 'string' && container.status.trim().length > 0 ? container.status : 'Unknown';
+              const statusTimeRaw = container['status-time'];
+              const statusDate = typeof statusTimeRaw === 'string' && statusTimeRaw.length > 0 ? new Date(statusTimeRaw) : undefined;
+              const containerKey = container.id ?? container['container-id'] ?? container['workflow-id'] ?? index;
+              const displayName =
+                (typeof container['parent-source-object-name'] === 'string' && container['parent-source-object-name']) ||
+                (typeof container['docker-image'] === 'string' && container['docker-image']) ||
+                (typeof container.id === 'string' || typeof container.id === 'number' ? String(container.id) : 'Container');
+              const userId = typeof container['user-id'] === 'string' ? container['user-id'] : '—';
+              const projectId = typeof container['project-id'] === 'string' ? container['project-id'] : '';
+
+              return (
+                <div key={String(containerKey)} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {getStatusIcon(status)}
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{displayName}</div>
+                        <div className="text-xs text-gray-500">
+                          {userId}
+                          {projectId ? ` • ${projectId}` : ''}
+                        </div>
                       </div>
                     </div>
+                    <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(status))}>
+                      {status}
+                    </span>
                   </div>
-                  <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(container.status))}>
-                    {container.status}
-                  </span>
+                  <div className="mt-2 text-xs text-gray-500">Updated {formatDate(statusDate)}</div>
                 </div>
-                <div className="mt-2 text-xs text-gray-500">
-                  Updated {formatDate(new Date(container['status-time']))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+      <WorkflowBuildDirModal
+        workflowId={selectedBuildDirWorkflowId}
+        onClose={() => setSelectedBuildDirWorkflowId(null)}
+      />
+      <WorkflowContainerSummaryModal
+        containerId={selectedContainerId}
+        onClose={() => setSelectedContainerId(null)}
+      />
     </div>
   );
 }

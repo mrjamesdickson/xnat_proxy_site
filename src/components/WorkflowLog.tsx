@@ -1,12 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { RefreshCcw, ArrowLeft, Download, Copy, AlertCircle } from 'lucide-react';
+import { RefreshCcw, ArrowLeft, Download, Copy, AlertCircle, FolderSearch, Eye } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
+import { WorkflowBuildDirModal } from './WorkflowBuildDir';
+import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { getWorkflowContainerId } from '../utils/workflows';
+import type { XnatWorkflow } from '../services/xnat-api';
 
 export function WorkflowLog() {
   const { workflowId } = useParams();
   const { client } = useXnat();
+  const [showBuildDir, setShowBuildDir] = useState(false);
+  const [showContainerSummary, setShowContainerSummary] = useState(false);
 
   const {
     data: logText = '',
@@ -21,6 +27,14 @@ export function WorkflowLog() {
   });
 
   const lines = useMemo(() => (logText ? logText.split(/\r?\n/) : []), [logText]);
+
+  const { data: workflow } = useQuery<XnatWorkflow | null>({
+    queryKey: ['workflow-detail', workflowId],
+    queryFn: () => client?.getWorkflow(String(workflowId)) ?? null,
+    enabled: Boolean(client) && Boolean(workflowId),
+  });
+
+  const containerId = useMemo(() => getWorkflowContainerId(workflow), [workflow]);
 
   const handleCopy = () => {
     if (logText) {
@@ -52,12 +66,26 @@ export function WorkflowLog() {
               Back to Workflow
             </Link>
             {workflowId && (
-              <Link
-                to={`/processing/workflows/${workflowId}/build`}
-                className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
-              >
-                Build Dir
-              </Link>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowBuildDir(true)}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500"
+                >
+                  <FolderSearch className="h-3 w-3" />
+                  Build Dir
+                </button>
+                {containerId && (
+                  <button
+                    type="button"
+                    onClick={() => setShowContainerSummary(true)}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500"
+                  >
+                    <Eye className="h-3 w-3" />
+                    Summary
+                  </button>
+                )}
+              </>
             )}
             <Link
               to="/processing"
@@ -123,6 +151,15 @@ export function WorkflowLog() {
           </pre>
         </div>
       )}
+
+      <WorkflowBuildDirModal
+        workflowId={showBuildDir && workflowId ? workflowId : null}
+        onClose={() => setShowBuildDir(false)}
+      />
+      <WorkflowContainerSummaryModal
+        containerId={showContainerSummary ? containerId ?? null : null}
+        onClose={() => setShowContainerSummary(false)}
+      />
     </div>
   );
 }

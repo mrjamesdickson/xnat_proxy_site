@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
   Folder as FolderIcon,
   FolderOpen,
   File as FileIcon,
   RefreshCcw,
   Download,
   Loader2,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useXnat } from '../contexts/XnatContext';
@@ -21,6 +20,11 @@ interface TreeNode extends WorkflowBuildDirNode {
   isLoading?: boolean;
   hasFetchedChildren?: boolean;
   hasMoreChildren?: boolean;
+}
+
+interface WorkflowBuildDirModalProps {
+  workflowId: string | null;
+  onClose: () => void;
 }
 
 const toTreeNodes = (nodes: WorkflowBuildDirNode[] = []): TreeNode[] =>
@@ -62,7 +66,8 @@ const fetchBuildDirNodes = async (
 ): Promise<WorkflowBuildDirNode[]> => {
   const maybeFn = (apiClient as unknown as Record<string, unknown>).getWorkflowBuildDir;
   if (typeof maybeFn === 'function') {
-    return (maybeFn as (workflowId: string, path?: string) => Promise<WorkflowBuildDirNode[]>)(workflowId, path);
+    return (maybeFn as (this: XnatApiClient, workflowId: string, path?: string) => Promise<WorkflowBuildDirNode[]>)
+      .call(apiClient, workflowId, path);
   }
 
   const endpoint = path
@@ -93,18 +98,11 @@ const fetchBuildDirNodes = async (
   return [];
 };
 
-export function WorkflowBuildDir() {
-  const { workflowId } = useParams();
+export function WorkflowBuildDirModal({ workflowId, onClose }: WorkflowBuildDirModalProps) {
   const { client, config } = useXnat();
   const queryClient = useQueryClient();
 
-  const {
-    data: rootNodes,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useQuery<TreeNode[]>({
+  const { data: rootNodes, isLoading, isError, error, refetch } = useQuery<TreeNode[]>({
     queryKey: ['workflow-build-dir', workflowId],
     queryFn: async () => {
       if (!client || !workflowId) return [];
@@ -121,6 +119,29 @@ export function WorkflowBuildDir() {
       setTree(rootNodes);
     }
   }, [rootNodes]);
+
+  useEffect(() => {
+    if (!workflowId) {
+      setTree([]);
+    }
+  }, [workflowId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (workflowId) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+
+    return undefined;
+  }, [workflowId, onClose]);
+
+  const baseUrl = config?.baseURL;
 
   const handleToggle = async (node: TreeNode) => {
     if (!client || !workflowId) return;
@@ -170,60 +191,63 @@ export function WorkflowBuildDir() {
     }
   };
 
-  const baseUrl = config?.baseURL;
+  if (!workflowId) {
+    return null;
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-4">
-            <Link
-              to={workflowId ? `/processing/workflows/${workflowId}` : '/processing'}
-              className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-500"
-            >
-              <ArrowLeft className="mr-1 h-4 w-4" />
-              Back to Workflow
-            </Link>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Workflow Build Directory</h2>
+            <p className="text-xs text-gray-500">Workflow ID: {workflowId}</p>
           </div>
-          <h1 className="mt-3 text-2xl font-semibold text-gray-900">Workflow Build Directory</h1>
-          {workflowId && <p className="text-sm text-gray-500">Workflow ID: {workflowId}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                queryClient.removeQueries({ queryKey: ['workflow-build-dir', workflowId] });
+                refetch();
+              }}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              <RefreshCcw className="mr-2 h-3.5 w-3.5" />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Close build directory"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            queryClient.removeQueries({ queryKey: ['workflow-build-dir', workflowId] });
-            refetch();
-          }}
-          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-        >
-          <RefreshCcw className="mr-2 h-4 w-4" />
-          Refresh
-        </button>
-      </div>
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, idx) => (
-            <div key={idx} className="h-8 animate-pulse rounded bg-gray-100" />
-          ))}
+        <div className="flex-1 overflow-y-auto p-4">
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="h-8 animate-pulse rounded bg-gray-100" />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              Failed to load build directory. {error instanceof Error ? error.message : 'Please try again.'}
+            </div>
+          ) : tree.length === 0 ? (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
+              No build directory entries were returned for this workflow.
+            </div>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+              <DirectoryTree nodes={tree} onToggle={handleToggle} baseUrl={baseUrl} />
+            </div>
+          )}
         </div>
-      ) : isError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load build directory. {error instanceof Error ? error.message : 'Please try again.'}
-        </div>
-      ) : tree.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600">
-          No build directory entries were returned for this workflow.
-        </div>
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <DirectoryTree
-            nodes={tree}
-            onToggle={handleToggle}
-            baseUrl={baseUrl}
-          />
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -324,4 +348,4 @@ function updateNode(node: TreeNode, nodeKey: string, updater: (node: TreeNode) =
   return node;
 }
 
-export default WorkflowBuildDir;
+export default WorkflowBuildDirModal;

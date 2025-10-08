@@ -246,46 +246,95 @@ export interface XnatTotalCounts {
 }
 
 export interface XnatContainer {
-  id: string;
-  status: string;
-  'status-time': string;
-  'container-id': string;
-  'docker-image': string;
-  'command-id': string;
-  'wrapper-id': string;
+  id?: string | number;
+  status?: string;
+  'status-time'?: string;
+  'container-id'?: string;
+  'docker-image'?: string;
+  'command-id'?: string | number;
+  'wrapper-id'?: string | number;
   'project-id'?: string;
-  'user-id': string;
-  'workflow-id'?: string;
-  created: string;
-  history: XnatContainerHistory[];
-  mounts: XnatMount[];
-  'environment-variables': Record<string, string>;
-  'command-line': string;
-  'working-directory': string;
+  project?: string;
+  'user-id'?: string;
+  'workflow-id'?: string | number;
+  created?: string;
+  history?: XnatContainerHistory[];
+  mounts?: XnatMount[];
+  inputs?: XnatContainerInput[];
+  outputs?: XnatContainerOutput[];
+  env?: Record<string, string>;
+  'environment-variables'?: Record<string, string>;
+  'command-line'?: string;
+  'working-directory'?: string;
+  backend?: string;
   subtype?: string;
+  'override-entrypoint'?: boolean;
+  swarm?: boolean;
+  'auto-remove'?: boolean;
   'parent-source-object-name'?: string;
   'derived-data-id'?: string;
   'input-mount-xnat-host-path'?: string;
   'output-mount-xnat-host-path'?: string;
-  'log-paths': {
-    stdout: string;
-    stderr: string;
-  };
+  'log-paths'?: XnatLogPath[] | Record<string, string>;
+  ports?: Record<string, unknown>;
+  'swarm-constraints'?: Array<string | Record<string, unknown>>;
+  'container-labels'?: Record<string, string>;
+  secrets?: Array<string | Record<string, unknown>>;
+  'service-id'?: string;
+  'task-id'?: string;
+  'node-id'?: string;
+  [key: string]: unknown;
 }
 
 export interface XnatContainerHistory {
-  status: string;
-  'time-recorded': string;
+  id?: string | number;
+  status?: string;
+  'time-recorded'?: string;
   'external-timestamp'?: string;
   'exit-code'?: number;
-  'entity-type': 'system' | 'event' | 'user';
+  exitCode?: string | number;
+  message?: string;
+  'entity-type'?: 'system' | 'event' | 'user' | 'service' | string;
   'entity-id'?: string;
 }
 
+export interface XnatContainerLogResponse {
+  content: string;
+  timestamp: string | null;
+  bytesRead?: number;
+  fromFile?: boolean;
+}
+
+export interface XnatContainerInput {
+  id?: string | number;
+  type?: string;
+  name?: string;
+  sensitive?: boolean;
+  value?: unknown;
+}
+
+export interface XnatContainerOutput {
+  id?: string | number;
+  name?: string;
+  'from-command-output'?: string;
+  'from-output-handler'?: string;
+  type?: string;
+  required?: boolean;
+  mount?: string;
+  label?: string;
+  tags?: unknown[];
+  'handled-by'?: string;
+}
+
+export type XnatLogPath = string | Record<string, unknown>;
+
 export interface XnatMount {
-  name: string;
-  'xnat-host-path': string;
-  'container-path': string;
+  id?: string | number;
+  name?: string;
+  writable?: boolean;
+  'xnat-host-path'?: string;
+  'container-path'?: string;
+  'container-host-path'?: string;
   'input-files'?: XnatMountFile[];
   'output-files'?: XnatMountFile[];
 }
@@ -1700,16 +1749,97 @@ export class XnatApiClient {
     return '';
   }
 
-  async getContainerLogs(containerId: string, logType: 'stdout' | 'stderr' = 'stdout'): Promise<string> {
+  async getContainerLogs(
+    containerId: string,
+    logType: 'stdout' | 'stderr' = 'stdout',
+    options: { since?: string | number } = {},
+  ): Promise<XnatContainerLogResponse> {
+    const { since } = options;
+
+    const parseLogPayload = (payload: unknown): XnatContainerLogResponse => {
+      let content = '';
+      let timestamp: string | null = null;
+      let bytesRead: number | undefined;
+      let fromFile: boolean | undefined;
+
+      if (typeof payload === 'string') {
+        content = payload;
+      } else if (payload && typeof payload === 'object') {
+        const record = payload as Record<string, unknown>;
+        const rawContent = record.content ?? record.log ?? record.message;
+
+        if (typeof rawContent === 'string') {
+          content = rawContent;
+        } else if (Array.isArray(rawContent)) {
+          const lines = (rawContent as unknown[]).filter((line): line is string => typeof line === 'string');
+          content = lines.join('\n');
+        }
+
+        const lineArray = record.lines;
+        if (!content && Array.isArray(lineArray)) {
+          const lines = (lineArray as unknown[]).filter((line): line is string => typeof line === 'string');
+          content = lines.join('\n');
+        }
+
+        if (typeof record.timestamp === 'string') {
+          timestamp = record.timestamp;
+        } else if (typeof record.timestamp === 'number') {
+          timestamp = Number.isFinite(record.timestamp) ? String(record.timestamp) : null;
+        }
+
+        if (typeof record.bytesRead === 'number') {
+          bytesRead = record.bytesRead;
+        }
+
+        if (typeof record.fromFile === 'boolean') {
+          fromFile = record.fromFile;
+        }
+      }
+
+      if (!timestamp && since !== undefined && since !== null) {
+        timestamp = String(since);
+      }
+
+      return { content, timestamp, bytesRead, fromFile };
+    };
+
+    const logSincePath = `/xapi/containers/${containerId}/logSince/${logType}`;
+    const params: Record<string, string | number> = { format: 'json' };
+    if (since !== undefined && since !== null) {
+      params.timestamp = typeof since === 'number' ? since : since;
+    }
+
+    try {
+      const response = await this.client.get(logSincePath, { params });
+      const parsed = parseLogPayload(response.data);
+      if (parsed.content || parsed.timestamp) {
+        return parsed;
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status && ![404, 410].includes(status)) {
+          console.warn(`Container logSince request failed for ${logSincePath} with status ${status}`);
+        }
+      } else {
+        console.warn(`Container logSince request failed for ${logSincePath}:`, error);
+      }
+    }
+
     try {
       const response = await this.client.get(`/xapi/containers/${containerId}/logs/${logType}`, {
-        responseType: 'text'
+        responseType: 'text',
       });
-      return response.data || '';
+      const parsed = parseLogPayload(response.data);
+      if (parsed.content) {
+        return parsed;
+      }
+      return { ...parsed, content: '' };
     } catch (error) {
       console.error('Error fetching container logs:', error);
-      return '';
     }
+
+    return { content: '', timestamp: since !== undefined && since !== null ? String(since) : null };
   }
 
   async getProcesses(): Promise<XnatProcess[]> {
