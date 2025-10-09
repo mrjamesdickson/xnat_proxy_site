@@ -64,9 +64,9 @@ export function SubjectDetail() {
     <div className="space-y-6">
       {/* Breadcrumb Navigation */}
       <nav className="flex items-center space-x-2 text-sm text-gray-500">
-        <Link to="/subjects" className="hover:text-gray-700">Subjects</Link>
+        <Link to="/projects" className="hover:text-gray-700">Projects</Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{project}</span>
+        <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{subject}</span>
       </nav>
