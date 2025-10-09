@@ -68,7 +68,7 @@ export function SubjectDetail() {
         <span>/</span>
         <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{subject}</span>
+        <span className="text-gray-900 font-medium">{subjectData?.label || subject}</span>
       </nav>
 
       {/* Back Button */}

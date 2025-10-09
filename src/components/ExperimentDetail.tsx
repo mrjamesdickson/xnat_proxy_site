@@ -96,9 +96,11 @@ export function ExperimentDetail() {
         <span>/</span>
         <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
-        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">{subject}</Link>
+        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+          {subjectData?.label || subject}
+        </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{experiment}</span>
+        <span className="text-gray-900 font-medium">{experimentData?.label || experiment}</span>
       </nav>
 
       {/* Back Button */}

@@ -45,6 +45,12 @@ export function Scans() {
   const [rawHeadersError, setRawHeadersError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'metadata' | 'raw'>('metadata');
 
+  const { data: subjectData } = useQuery({
+    queryKey: ['subject', project, subject],
+    queryFn: () => client?.getSubject(project!, subject!) || null,
+    enabled: !!client && !!project && !!subject,
+  });
+
   const { data: experimentData } = useQuery({
     queryKey: ['experiment', project, subject, experiment],
     queryFn: () => client?.getExperiment(project!, subject!, experiment!) || null,
@@ -172,13 +178,15 @@ export function Scans() {
         <span>/</span>
         <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
-        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">{subject}</Link>
+        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+          {subjectData?.label || subject}
+        </Link>
         <span>/</span>
         <Link
           to={`/experiments/${project}/${subject}/${experiment}`}
           className="hover:text-gray-700"
         >
-          {experiment}
+          {experimentData?.label || experiment}
         </Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">Scans</span>
