@@ -94,13 +94,13 @@ export function ExperimentDetail() {
       <nav className="flex items-center space-x-2 text-sm text-gray-500">
         <Link to="/projects" className="hover:text-gray-700">Projects</Link>
         <span>/</span>
-        <Link to="/experiments" className="hover:text-gray-700">Experiments</Link>
+        <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{project}</span>
+        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+          {subjectData?.label || subject}
+        </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{subject}</span>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">{experiment}</span>
+        <span className="text-gray-900 font-medium">{experimentData?.label || experiment}</span>
       </nav>
 
       {/* Back Button */}

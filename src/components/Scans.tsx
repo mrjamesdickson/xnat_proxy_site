@@ -45,6 +45,12 @@ export function Scans() {
   const [rawHeadersError, setRawHeadersError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'metadata' | 'raw'>('metadata');
 
+  const { data: subjectData } = useQuery({
+    queryKey: ['subject', project, subject],
+    queryFn: () => client?.getSubject(project!, subject!) || null,
+    enabled: !!client && !!project && !!subject,
+  });
+
   const { data: experimentData } = useQuery({
     queryKey: ['experiment', project, subject, experiment],
     queryFn: () => client?.getExperiment(project!, subject!, experiment!) || null,
@@ -170,17 +176,17 @@ export function Scans() {
       <nav className="flex items-center space-x-2 text-sm text-gray-500">
         <Link to="/projects" className="hover:text-gray-700">Projects</Link>
         <span>/</span>
-        <Link to="/experiments" className="hover:text-gray-700">Experiments</Link>
+        <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{project}</span>
+        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+          {subjectData?.label || subject}
+        </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{subject}</span>
-        <span>/</span>
-        <Link 
+        <Link
           to={`/experiments/${project}/${subject}/${experiment}`}
           className="hover:text-gray-700"
         >
-          {experiment}
+          {experimentData?.label || experiment}
         </Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">Scans</span>

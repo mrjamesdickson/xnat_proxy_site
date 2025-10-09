@@ -95,11 +95,14 @@ function AppContent() {
 }
 
 function App() {
+  // Use /morpheus basename in production builds
+  const basename = import.meta.env.BASE_URL;
+
   return (
     <ThemeProvider>
       <QueryProvider>
         <XnatProvider>
-          <Router>
+          <Router basename={basename}>
             <AppContent />
           </Router>
         </XnatProvider>
