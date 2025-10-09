@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
@@ -11,9 +12,11 @@ import {
   FileImage,
   Settings,
   Eye,
-  Monitor
+  Monitor,
+  FolderCog
 } from 'lucide-react';
 import { ScanSnapshot } from './ScanSnapshot';
+import { ManageFilesDialog } from './ManageFilesDialog';
 
 export function ExperimentDetail() {
   const { project, subject, experiment } = useParams<{
@@ -23,6 +26,7 @@ export function ExperimentDetail() {
   }>();
   
   const { client } = useXnat();
+  const [isManageFilesOpen, setIsManageFilesOpen] = useState(false);
 
   // Get the XNAT base URL for the viewer link
   const xnatConfig = client?.getConfig();
@@ -84,7 +88,8 @@ export function ExperimentDetail() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       {/* Breadcrumb Navigation */}
       <nav className="flex items-center space-x-2 text-sm text-gray-500">
         <Link to="/projects" className="hover:text-gray-700">Projects</Link>
@@ -336,6 +341,14 @@ export function ExperimentDetail() {
                 OHIF Viewer (New Tab)
               </button>
               
+              <button
+                onClick={() => setIsManageFilesOpen(true)}
+                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <FolderCog className="h-4 w-4 mr-2" />
+                Manage Files
+              </button>
+              
               <Link
                 to={`/experiments/${project}/${subject}/${experiment}/scans`}
                 className="block w-full text-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
@@ -354,5 +367,17 @@ export function ExperimentDetail() {
         </div>
       </div>
     </div>
+
+      {project && subject && experiment && (
+        <ManageFilesDialog
+          isOpen={isManageFilesOpen}
+          onClose={() => setIsManageFilesOpen(false)}
+          projectId={project}
+          subjectId={subject}
+          experimentId={experiment}
+          experimentLabel={experimentData?.label || experiment}
+        />
+      )}
+    </>
   );
 }

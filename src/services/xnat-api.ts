@@ -149,12 +149,15 @@ export interface XnatScan {
 
 export interface XnatResource {
   label: string;
+  xnat_abstractresource_id?: string;
   description?: string;
   format?: string;
   content?: string;
   file_count?: number;
   file_size?: number;
   cat_id?: string;
+  cat_desc?: string;
+  category?: string;
   tags?: string;
   URI?: string;
 }
@@ -170,6 +173,26 @@ export interface XnatFile {
   tags?: string;
   URI: string;
 }
+
+export interface XnatAssessor {
+  id: string;
+  label: string;
+  project?: string;
+  session_ID?: string;
+  session_label?: string;
+  xsiType?: string;
+  date?: string;
+  insert_date?: string;
+  URI?: string;
+  imageAssessorDataId?: string;
+  [key: string]: unknown;
+}
+
+export type XnatResourceScope =
+  | { type: 'experiment' }
+  | { type: 'scan'; id: string }
+  | { type: 'assessor'; id: string }
+  | { type: 'reconstruction'; id: string };
 
 export interface XnatUser {
   id: number | string;
@@ -602,6 +625,36 @@ export class XnatApiClient {
         .filter(Boolean);
     }
     return [String(value).trim()].filter(Boolean);
+  }
+
+  private normalizeResourceScope(scope?: string | XnatResourceScope): XnatResourceScope {
+    if (!scope) {
+      return { type: 'experiment' };
+    }
+    if (typeof scope === 'string') {
+      return { type: 'scan', id: scope };
+    }
+    return scope;
+  }
+
+  private buildResourceBasePath(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    scope: XnatResourceScope
+  ): string {
+    const root = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
+
+    switch (scope.type) {
+      case 'scan':
+        return `${root}/scans/${encodeURIComponent(scope.id)}/resources`;
+      case 'assessor':
+        return `${root}/assessors/${encodeURIComponent(scope.id)}/resources`;
+      case 'reconstruction':
+        return `${root}/reconstructions/${encodeURIComponent(scope.id)}/resources`;
+      default:
+        return `${root}/resources`;
+    }
   }
 
   private extractList(source: UnknownRecord | undefined, keys: string[]): string[] {
@@ -1100,6 +1153,28 @@ export class XnatApiClient {
     }));
   }
 
+  async getAssessors(projectId: string, subjectId: string, experimentId: string): Promise<XnatAssessor[]> {
+    const response = await this.client.get(
+      `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}/assessors`,
+      { params: { format: 'json' } }
+    );
+
+    const assessors = response.data.ResultSet?.Result || [];
+    return assessors.map((assessor: UnknownRecord) => {
+      const id = this.extractString(assessor, ['id', 'ID']) || '';
+      const label = this.extractString(assessor, ['label', 'ID']) || id;
+      const imageAssessorDataId =
+        this.extractString(assessor, ['xnat:imageassessordata/id', 'xnat_imageassessordata_id']) || undefined;
+
+      return {
+        ...assessor,
+        id,
+        label,
+        imageAssessorDataId,
+      } as XnatAssessor;
+    });
+  }
+
   getScanThumbnailUrl(projectId: string, _subjectId: string, experimentId: string, scanId: string): string {
     // Use the correct XAPI endpoint for scan snapshots
     const path = `/xapi/projects/${projectId}/experiments/${experimentId}/scan/${scanId}/snapshot`;
@@ -1235,52 +1310,107 @@ export class XnatApiClient {
   }
 
   // Resource methods
-  async getResources(projectId: string, subjectId: string, experimentId: string, scanId?: string): Promise<XnatResource[]> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId ? `${basePath}/scans/${scanId}/resources` : `${basePath}/resources`;
-    
-    const response = await this.client.get(url);
-    return response.data.ResultSet.Result || [];
+  async getResources(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    scope?: string | XnatResourceScope
+  ): Promise<XnatResource[]> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+
+    const response = await this.client.get(basePath);
+    const data = response.data;
+
+    if (Array.isArray(data)) {
+      return data as XnatResource[];
+    }
+    if (data?.ResultSet?.Result) {
+      return data.ResultSet.Result;
+    }
+    if (data?.items?.[0]?.data_fields) {
+      return [data.items[0].data_fields];
+    }
+
+    return [];
   }
 
-  async getResource(projectId: string, subjectId: string, experimentId: string, resourceId: string, scanId?: string): Promise<XnatResource> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId ? `${basePath}/scans/${scanId}/resources/${resourceId}` : `${basePath}/resources/${resourceId}`;
-    
+  async getResource(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    scope?: string | XnatResourceScope
+  ): Promise<XnatResource> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const url = `${basePath}/${encodeURIComponent(resourceId)}`;
+
     const response = await this.client.get(url);
-    return response.data.items[0].data_fields;
+    return response.data.items?.[0]?.data_fields ?? response.data;
   }
 
-  async createResource(projectId: string, subjectId: string, experimentId: string, resource: Partial<XnatResource>, scanId?: string): Promise<XnatResource> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId ? `${basePath}/scans/${scanId}/resources/${resource.label}` : `${basePath}/resources/${resource.label}`;
-    
+  async createResource(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resource: Partial<XnatResource>,
+    scope?: string | XnatResourceScope
+  ): Promise<XnatResource> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const label = resource.label;
+    if (!label) {
+      throw new Error('Resource label is required to create a resource.');
+    }
+    const url = `${basePath}/${encodeURIComponent(label)}`;
+
     const response = await this.client.put(url, resource);
     return response.data;
   }
 
-  async deleteResource(projectId: string, subjectId: string, experimentId: string, resourceId: string, scanId?: string): Promise<void> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId ? `${basePath}/scans/${scanId}/resources/${resourceId}` : `${basePath}/resources/${resourceId}`;
-    
+  async deleteResource(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    scope?: string | XnatResourceScope
+  ): Promise<void> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const url = `${basePath}/${encodeURIComponent(resourceId)}`;
+
     await this.client.delete(url);
   }
 
   // File methods
-  async getFiles(projectId: string, subjectId: string, experimentId: string, resourceId: string, scanId?: string): Promise<XnatFile[]> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId ? `${basePath}/scans/${scanId}/resources/${resourceId}/files` : `${basePath}/resources/${resourceId}/files`;
-    
+  async getFiles(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    scope?: string | XnatResourceScope
+  ): Promise<XnatFile[]> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const url = `${basePath}/${encodeURIComponent(resourceId)}/files`;
+
     const response = await this.client.get(url);
-    return response.data.ResultSet.Result || [];
+    return response.data.ResultSet?.Result || [];
   }
 
-  async downloadFile(projectId: string, subjectId: string, experimentId: string, resourceId: string, filename: string, scanId?: string): Promise<Blob> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId 
-      ? `${basePath}/scans/${scanId}/resources/${resourceId}/files/${filename}` 
-      : `${basePath}/resources/${resourceId}/files/${filename}`;
-    
+  async downloadFile(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    filename: string,
+    scope?: string | XnatResourceScope
+  ): Promise<Blob> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const url = `${basePath}/${encodeURIComponent(resourceId)}/files/${encodeURIComponent(filename)}`;
+
     const response = await this.client.get(url, {
       responseType: 'blob',
     });
@@ -1288,21 +1418,20 @@ export class XnatApiClient {
   }
 
   async uploadFile(
-    projectId: string, 
-    subjectId: string, 
-    experimentId: string, 
-    resourceId: string, 
-    file: File, 
-    scanId?: string
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    file: File,
+    scope?: string | XnatResourceScope
   ): Promise<void> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId 
-      ? `${basePath}/scans/${scanId}/resources/${resourceId}/files/${file.name}` 
-      : `${basePath}/resources/${resourceId}/files/${file.name}`;
-    
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const url = `${basePath}/${encodeURIComponent(resourceId)}/files/${encodeURIComponent(file.name)}`;
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     await this.client.put(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -1310,13 +1439,90 @@ export class XnatApiClient {
     });
   }
 
-  async deleteFile(projectId: string, subjectId: string, experimentId: string, resourceId: string, filename: string, scanId?: string): Promise<void> {
-    const basePath = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
-    const url = scanId 
-      ? `${basePath}/scans/${scanId}/resources/${resourceId}/files/${filename}` 
-      : `${basePath}/resources/${resourceId}/files/${filename}`;
-    
+  async deleteFile(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    filename: string,
+    scope?: string | XnatResourceScope,
+    options?: { path?: string }
+  ): Promise<void> {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    const segments: string[] = [];
+    if (options?.path) {
+      segments.push(
+        ...options.path
+          .split('/')
+          .filter(Boolean)
+          .map((part) => encodeURIComponent(part))
+      );
+    } else {
+      segments.push(encodeURIComponent(filename));
+    }
+
+    const url = `${basePath}/${encodeURIComponent(resourceId)}/files/${segments.join('/')}`;
     await this.client.delete(url);
+  }
+
+  getResourceFilesUrl(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    scope?: string | XnatResourceScope
+  ): string {
+    const normalizedScope = this.normalizeResourceScope(scope);
+    const basePath = this.buildResourceBasePath(projectId, subjectId, experimentId, normalizedScope);
+    return `${basePath}/${encodeURIComponent(resourceId)}/files`;
+  }
+
+  getResourceDownloadUrl(
+    projectId: string,
+    subjectId: string,
+    experimentId: string,
+    resourceId: string,
+    scope?: string | XnatResourceScope,
+    options?: { format?: 'zip' | 'tar.gz'; path?: string }
+  ): string {
+    const filesPath = this.getResourceFilesUrl(projectId, subjectId, experimentId, resourceId, scope);
+    const params = new URLSearchParams();
+    if (options?.format) {
+      params.set('format', options.format);
+    }
+    if (options?.path) {
+      params.set('path', options.path);
+    }
+    const query = params.toString();
+    const pathWithQuery = query ? `${filesPath}?${query}` : filesPath;
+    return this.buildUrl(pathWithQuery);
+  }
+
+  getBulkResourceDownloadUrl(
+    experimentId: string,
+    resourceIds: string[],
+    options?: { format?: 'zip' | 'tar.gz'; structure?: string; all?: boolean | string }
+  ): string {
+    const sanitizedIds = resourceIds.filter(Boolean);
+    if (!sanitizedIds.length) {
+      throw new Error('No resource IDs provided for bulk download');
+    }
+
+    const params = new URLSearchParams();
+    if (options?.format) {
+      params.set('format', options.format);
+    }
+    if (options?.structure) {
+      params.set('structure', options.structure);
+    }
+    if (options?.all) {
+      params.set('all', typeof options.all === 'string' ? options.all : 'true');
+    }
+
+    const base = `/REST/experiments/${encodeURIComponent(experimentId)}/resources/${sanitizedIds.join(',')}/files`;
+    const query = params.toString();
+    return this.buildUrl(query ? `${base}?${query}` : base);
   }
 
   // User management methods
