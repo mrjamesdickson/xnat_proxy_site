@@ -392,11 +392,30 @@ export function Experiments() {
 
                 return (
                   <tr key={experimentId} className="hover:bg-gray-50">
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
-                      {experiment.label || experimentId}
+                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium">
+                      <Link
+                        to={`/experiments/${projectId}/${subjectId}/${experiment.label || experimentId}`}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        {experiment.label || experimentId}
+                      </Link>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{projectId}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{subjectId}</td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm">
+                      <Link
+                        to={`/projects/${projectId}`}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        {projectId}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-4 text-sm">
+                      <Link
+                        to={`/subjects/${projectId}/${subjectId}`}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        {subjectId}
+                      </Link>
+                    </td>
                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       {experiment.modality && (
                         <span className={clsx(

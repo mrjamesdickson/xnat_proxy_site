@@ -232,8 +232,13 @@ export function Projects() {
                           <Folder className="h-5 w-5 text-blue-600" />
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {project.name || getProjectId(project)}
+                          <div className="text-sm font-medium">
+                            <Link
+                              to={`/projects/${getProjectId(project)}`}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
+                              {project.name || getProjectId(project)}
+                            </Link>
                           </div>
                           <div className="text-sm text-gray-500">{getProjectId(project)}</div>
                         </div>

@@ -286,8 +286,13 @@ export function Subjects() {
                           <User className="h-5 w-5 text-blue-600" />
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {subject.label || subjectId}
+                          <div className="text-sm font-medium">
+                            <Link
+                              to={`/subjects/${subject.project}/${subjectId}`}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
+                              {subject.label || subjectId}
+                            </Link>
                           </div>
                           <div className="text-sm text-gray-500">
                             ID: {subjectId}
@@ -295,9 +300,16 @@ export function Subjects() {
                         </div>
                       </div>
                     </td>
-                    
+
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{subject.project}</div>
+                      <div className="text-sm">
+                        <Link
+                          to={`/projects/${subject.project}`}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          {subject.project}
+                        </Link>
+                      </div>
                     </td>
                     
                     <td className="px-6 py-4 whitespace-nowrap">
