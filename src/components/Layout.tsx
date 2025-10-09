@@ -28,6 +28,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ChatWidget } from './ChatWidget';
+import { RouteDebugPanel } from './RouteDebugPanel';
 import type { XnatProject, XnatProjectAccess, XnatSavedSearch } from '../services/xnat-api';
 import { useTheme } from '../contexts/ThemeContext';
 import { THEME_OPTIONS, type ThemeMode } from '../contexts/theme-types';
@@ -716,6 +717,7 @@ export function Layout({ children }: LayoutProps) {
           </main>
         )}
         {!isViewerRoute && <ChatWidget />}
+        <RouteDebugPanel />
       </div>
     </div>
   );
