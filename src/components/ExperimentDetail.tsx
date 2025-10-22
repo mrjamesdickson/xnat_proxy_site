@@ -15,6 +15,7 @@ import {
   Monitor,
   FolderCog
 } from 'lucide-react';
+import { ProcessingMenu } from './ProcessingMenu';
 import { ScanSnapshot } from './ScanSnapshot';
 import { ManageFilesDialog } from './ManageFilesDialog';
 
@@ -47,6 +48,7 @@ export function ExperimentDetail() {
     queryFn: async () => {
       const result = await client?.getExperiment(project!, subject!, experiment!);
       console.log('📊 Experiment data fetched:', result);
+      console.log('📊 Experiment ID:', result?.id, 'URL param:', experiment);
       return result || null;
     },
     enabled: !!client && !!project && !!subject && !!experiment,
@@ -125,15 +127,24 @@ export function ExperimentDetail() {
               Experiment ID: {experiment}
             </p>
           </div>
-          
-          {experimentData?.modality && (
-            <div className="flex items-center">
+
+          <div className="flex items-center gap-3">
+            {experimentData?.modality && (
               <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800">
                 <Camera className="h-4 w-4 mr-1" />
                 {experimentData.modality.toUpperCase()}
               </span>
-            </div>
-          )}
+            )}
+            <ProcessingMenu
+              project={project!}
+              xsiType="xnat:imageSessionData"
+              contextParams={{
+                session: `/archive/experiments/${experimentData?.id || experiment}`
+              }}
+              rootElement="xnat:imageSessionData"
+              label={experimentData?.label || experiment}
+            />
+          </div>
         </div>
       </div>
 

@@ -436,6 +436,203 @@ export interface XnatSystemStats {
   version?: string;
 }
 
+// Container Service Command and Launch types
+export interface XnatCommand {
+  id: number;
+  name: string;
+  image: string;
+  version: string;
+  description?: string;
+  'schema-version'?: string;
+  type?: string;
+  'command-line'?: string;
+  'override-entrypoint'?: boolean;
+  mounts?: unknown[];
+  'environment-variables'?: Record<string, string>;
+  ports?: Record<string, string>;
+  inputs?: XnatCommandInput[];
+  outputs?: XnatCommandOutput[];
+  xnat?: XnatCommandWrapper[]; // Primary key used by XNAT
+  'xnat-command-wrappers'?: XnatCommandWrapper[];
+  xnatCommandWrappers?: XnatCommandWrapper[];
+  [key: string]: unknown;
+}
+
+export interface XnatCommandInput {
+  name: string;
+  description?: string;
+  type?: string;
+  matcher?: string;
+  'default-value'?: unknown;
+  defaultValue?: unknown;
+  required?: boolean;
+  'replacement-key'?: string;
+  'command-line-flag'?: string;
+  'command-line-separator'?: string;
+  'true-value'?: string;
+  'false-value'?: string;
+  sensitive?: boolean;
+  [key: string]: unknown;
+}
+
+export interface XnatCommandOutput {
+  name: string;
+  description?: string;
+  required?: boolean;
+  mount?: string;
+  type?: string;
+  'as-a-child-of'?: string;
+  'via-wrapup-command'?: string;
+  label?: string;
+  format?: string;
+  tags?: string[];
+  [key: string]: unknown;
+}
+
+export interface XnatCommandWrapper {
+  id: number;
+  name: string;
+  description?: string;
+  contexts?: string[];
+  'external-inputs'?: XnatWrapperExternalInput[];
+  'derived-inputs'?: XnatWrapperDerivedInput[];
+  'output-handlers'?: XnatWrapperOutputHandler[];
+  'command-id'?: number;
+  enabled?: boolean;
+  [key: string]: unknown;
+}
+
+export interface XnatWrapperExternalInput {
+  name: string;
+  description?: string;
+  type?: string;
+  matcher?: string;
+  'default-value'?: unknown;
+  required?: boolean;
+  'replacement-key'?: string;
+  'provides-value-for-command-input'?: string;
+  'provides-files-for-command-mount'?: string;
+  'via-setup-command'?: string;
+  'user-settable'?: boolean;
+  advanced?: boolean;
+  [key: string]: unknown;
+}
+
+export interface XnatWrapperDerivedInput {
+  name: string;
+  description?: string;
+  type?: string;
+  'derived-from-wrapper-input'?: string;
+  'derived-from-xnat-object-property'?: string;
+  'provides-value-for-command-input'?: string;
+  'provides-files-for-command-mount'?: string;
+  'via-setup-command'?: string;
+  matcher?: string;
+  required?: boolean;
+  'replacement-key'?: string;
+  'default-value'?: unknown;
+  [key: string]: unknown;
+}
+
+export interface XnatWrapperOutputHandler {
+  name: string;
+  'accepts-command-output'?: string;
+  'via-wrapup-command'?: string;
+  'as-a-child-of'?: string;
+  type?: string;
+  label?: string;
+  format?: string;
+  tags?: string[];
+  [key: string]: unknown;
+}
+
+export interface XnatCommandSummaryForContext {
+  'command-id'?: number;
+  commandId?: number;
+  'command-name'?: string;
+  commandName?: string;
+  'command-description'?: string;
+  commandDescription?: string;
+  'wrapper-id'?: number;
+  wrapperId?: number;
+  'wrapper-name'?: string;
+  wrapperName?: string;
+  'wrapper-description'?: string;
+  wrapperDescription?: string;
+  image?: string;
+  enabled?: boolean;
+  [key: string]: unknown;
+}
+
+export interface XnatLaunchUi {
+  'wrapper-id'?: number;
+  wrapperId?: number;
+  'root-element-name'?: string;
+  rootElementName?: string;
+  'input-config'?: XnatLaunchUiInput[];
+  inputs?: XnatLaunchUiInput[];
+  'input-values'?: Array<{
+    name: string;
+    values: Array<{
+      value: unknown;
+      label?: string;
+      children?: unknown[];
+    }>;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface XnatLaunchUiInput {
+  name: string;
+  label?: string;
+  description?: string;
+  type?: string;
+  required?: boolean;
+  'default-value'?: unknown;
+  defaultValue?: unknown;
+  matcher?: string;
+  values?: XnatLaunchUiInputValue[];
+  'user-settable'?: boolean;
+  userSettable?: boolean;
+  advanced?: boolean;
+  'command-input-name'?: string;
+  [key: string]: unknown;
+}
+
+export interface XnatLaunchUiInputValue {
+  value?: unknown;
+  label?: string;
+  [key: string]: unknown;
+}
+
+export interface XnatLaunchReport {
+  status?: 'Success' | 'Failure' | 'success' | 'failure'; // XNAT returns lowercase
+  'container-id'?: string;
+  containerId?: string;
+  'workflow-id'?: string;
+  workflowId?: string;
+  message?: string;
+  params?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+export interface XnatBulkLaunchReport {
+  successes?: XnatLaunchReport[];
+  failures?: XnatLaunchReport[];
+  [key: string]: unknown;
+}
+
+export interface XnatCommandConfiguration {
+  id?: number;
+  'wrapper-id'?: number;
+  wrapperId?: number;
+  'command-id'?: number;
+  commandId?: number;
+  enabled?: boolean;
+  inputs?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface OpenApiTag {
@@ -1751,10 +1948,16 @@ export class XnatApiClient {
 
   async killContainer(containerId: string): Promise<boolean> {
     try {
-      await this.client.delete(`/xapi/containers/${containerId}/kill`);
+      console.log('🛑 Killing container:', containerId);
+      const response = await this.client.post(`/xapi/containers/${containerId}/kill`);
+      console.log('✅ Kill response:', response.status, response.data);
       return true;
     } catch (error) {
-      console.error('Error killing container:', error);
+      console.error('❌ Error killing container:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
       return false;
     }
   }
@@ -2095,6 +2298,235 @@ export class XnatApiClient {
     } catch (error) {
       console.warn('Error fetching system stats:', error);
       return null;
+    }
+  }
+
+  // Command and Launch methods
+  async getCommands(): Promise<XnatCommand[]> {
+    try {
+      const response = await this.client.get('/xapi/commands', {
+        params: { format: 'json' }
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        console.warn('Command service not available on this XNAT server');
+        return [];
+      }
+      console.error('Error fetching commands:', error);
+      return [];
+    }
+  }
+
+  async getCommand(commandId: number): Promise<XnatCommand | null> {
+    try {
+      const response = await this.client.get(`/xapi/commands/${commandId}`, {
+        params: { format: 'json' }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching command:', error);
+      return null;
+    }
+  }
+
+  async getAvailableCommands(xsiType: string, project?: string): Promise<XnatCommandSummaryForContext[]> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/commands/available`
+        : `/xapi/commands/available/site`;
+      const response = await this.client.get(url, {
+        params: { xsiType, format: 'json' }
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        console.warn('Available commands endpoint not found');
+        return [];
+      }
+      console.error('Error fetching available commands:', error);
+      return [];
+    }
+  }
+
+  async getLaunchUi(
+    wrapperId: number,
+    params: Record<string, string>,
+    project?: string
+  ): Promise<XnatLaunchUi | null> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/wrappers/${wrapperId}/launch`
+        : `/xapi/wrappers/${wrapperId}/launch`;
+      const response = await this.client.get(url, {
+        params: { ...params, format: 'json' }
+      });
+      return response.data || null;
+    } catch (error) {
+      console.error('Error fetching launch UI:', error);
+      return null;
+    }
+  }
+
+  async launchContainer(
+    wrapperId: number,
+    rootElement: string,
+    params: Record<string, string>,
+    project?: string
+  ): Promise<XnatLaunchReport> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/wrappers/${wrapperId}/root/${rootElement}/launch`
+        : `/xapi/wrappers/${wrapperId}/root/${rootElement}/launch`;
+
+      console.log('🚀 Launching container:', {
+        url,
+        wrapperId,
+        rootElement,
+        project,
+        params
+      });
+
+      const response = await this.client.post(url, params, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      console.log('✅ Launch response:', response.data);
+
+      // XNAT returns lowercase "success" - normalize it
+      if (response.data && response.data.status) {
+        response.data.status = response.data.status.charAt(0).toUpperCase() + response.data.status.slice(1);
+      }
+
+      return response.data || { status: 'Success' };
+    } catch (error) {
+      console.error('❌ Error launching container:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+        console.error('Request URL:', error.config?.url);
+        console.error('Request data:', error.config?.data);
+
+        if (error.response?.data) {
+          return {
+            status: 'Failure',
+            message: typeof error.response.data === 'string'
+              ? error.response.data
+              : JSON.stringify(error.response.data)
+          };
+        }
+      }
+      return {
+        status: 'Failure',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async launchContainerByCommandName(
+    commandId: number,
+    wrapperName: string,
+    rootElement: string,
+    params: Record<string, string>,
+    project?: string
+  ): Promise<XnatLaunchReport> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/commands/${commandId}/wrappers/${wrapperName}/root/${rootElement}/launch`
+        : `/xapi/commands/${commandId}/wrappers/${wrapperName}/root/${rootElement}/launch`;
+      const response = await this.client.post(url, params, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data || { status: 'Success' };
+    } catch (error) {
+      console.error('Error launching container:', error);
+      if (axios.isAxiosError(error) && error.response?.data) {
+        return {
+          status: 'Failure',
+          message: typeof error.response.data === 'string'
+            ? error.response.data
+            : error.message
+        };
+      }
+      return {
+        status: 'Failure',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  async bulkLaunch(
+    wrapperId: number,
+    rootElement: string,
+    params: Record<string, string>,
+    project?: string
+  ): Promise<XnatBulkLaunchReport> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/wrappers/${wrapperId}/root/${rootElement}/bulklaunch`
+        : `/xapi/wrappers/${wrapperId}/root/${rootElement}/bulklaunch`;
+      const response = await this.client.post(url, params, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data || { successes: [], failures: [] };
+    } catch (error) {
+      console.error('Error bulk launching containers:', error);
+      return { successes: [], failures: [] };
+    }
+  }
+
+  async bulkLaunchByCommandName(
+    commandId: number,
+    wrapperName: string,
+    rootElement: string,
+    params: Record<string, string>,
+    project?: string
+  ): Promise<XnatBulkLaunchReport> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/commands/${commandId}/wrappers/${wrapperName}/root/${rootElement}/bulklaunch`
+        : `/xapi/commands/${commandId}/wrappers/${wrapperName}/root/${rootElement}/bulklaunch`;
+      const response = await this.client.post(url, params, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data || { successes: [], failures: [] };
+    } catch (error) {
+      console.error('Error bulk launching containers:', error);
+      return { successes: [], failures: [] };
+    }
+  }
+
+  async getCommandConfiguration(
+    wrapperId: number,
+    project?: string
+  ): Promise<XnatCommandConfiguration | null> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/wrappers/${wrapperId}/config`
+        : `/xapi/wrappers/${wrapperId}/config`;
+      const response = await this.client.get(url, {
+        params: { format: 'json' }
+      });
+      return response.data || null;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        return null;
+      }
+      console.error('Error fetching command configuration:', error);
+      return null;
+    }
+  }
+
+  async isCommandEnabled(wrapperId: number, project?: string): Promise<boolean> {
+    try {
+      const url = project
+        ? `/xapi/projects/${project}/wrappers/${wrapperId}/enabled`
+        : `/xapi/wrappers/${wrapperId}/enabled`;
+      const response = await this.client.get(url);
+      return response.data === true || response.data === 'true';
+    } catch (error) {
+      console.error('Error checking if command is enabled:', error);
+      return false;
     }
   }
 

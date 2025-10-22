@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
+import {
   ArrowLeft,
   Folder,
   Users,
@@ -11,6 +11,7 @@ import {
   Activity,
   Eye
 } from 'lucide-react';
+import { ProcessingMenu } from './ProcessingMenu';
 
 export function ProjectDetail() {
   const { project } = useParams<{
@@ -96,6 +97,15 @@ export function ProjectDetail() {
               </p>
             </div>
           </div>
+          <ProcessingMenu
+            project={project!}
+            xsiType="xnat:projectData"
+            contextParams={{
+              project: `/archive/projects/${project}`
+            }}
+            rootElement="xnat:projectData"
+            label={projectData?.name || project}
+          />
         </div>
       </div>
 

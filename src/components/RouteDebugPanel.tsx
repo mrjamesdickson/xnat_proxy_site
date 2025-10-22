@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Link2, Copy, Check, ChevronUp, ChevronDown } from 'lucide-react';
+import { Link2, Copy, Check, ChevronDown } from 'lucide-react';
 
 export function RouteDebugPanel() {
   const [isOpen, setIsOpen] = useState(false);
