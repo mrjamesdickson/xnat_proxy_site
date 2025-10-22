@@ -1948,10 +1948,16 @@ export class XnatApiClient {
 
   async killContainer(containerId: string): Promise<boolean> {
     try {
-      await this.client.delete(`/xapi/containers/${containerId}/kill`);
+      console.log('🛑 Killing container:', containerId);
+      const response = await this.client.post(`/xapi/containers/${containerId}/kill`);
+      console.log('✅ Kill response:', response.status, response.data);
       return true;
     } catch (error) {
-      console.error('Error killing container:', error);
+      console.error('❌ Error killing container:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
       return false;
     }
   }

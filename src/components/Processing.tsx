@@ -859,6 +859,24 @@ export function Processing() {
                                   <Eye className="h-3 w-3" />
                                   Summary
                                 </button>
+                                {(status.toLowerCase() === 'running' || status.toLowerCase() === 'active') && (
+                                  <>
+                                    <span className="text-gray-300">•</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleKillContainer(containerId)}
+                                      disabled={killingContainers.has(containerId)}
+                                      className="inline-flex items-center gap-1 text-red-600 hover:text-red-500 disabled:opacity-50"
+                                    >
+                                      {killingContainers.has(containerId) ? (
+                                        <RefreshCw className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <StopCircle className="h-3 w-3" />
+                                      )}
+                                      Kill
+                                    </button>
+                                  </>
+                                )}
                               </>
                             )}
                             <span className="text-gray-300">•</span>
@@ -1025,6 +1043,24 @@ export function Processing() {
                                 <Eye className="h-3 w-3" />
                                 Summary
                               </button>
+                              {(status.toLowerCase() === 'running' || status.toLowerCase() === 'active') && (
+                                <>
+                                  <span className="text-gray-300">•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleKillContainer(containerId)}
+                                    disabled={killingContainers.has(containerId)}
+                                    className="inline-flex items-center gap-1 text-red-600 hover:text-red-500 disabled:opacity-50"
+                                  >
+                                    {killingContainers.has(containerId) ? (
+                                      <RefreshCw className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <StopCircle className="h-3 w-3" />
+                                    )}
+                                    Kill
+                                  </button>
+                                </>
+                              )}
                             </>
                           )}
                           <span className="text-gray-300">•</span>
