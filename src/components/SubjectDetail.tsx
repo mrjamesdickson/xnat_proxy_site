@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
-import { 
+import {
   ArrowLeft,
   User,
   Folder,
@@ -10,6 +10,7 @@ import {
   Eye,
   Activity
 } from 'lucide-react';
+import { ProcessingMenu } from './ProcessingMenu';
 
 export function SubjectDetail() {
   const { project, subject } = useParams<{
@@ -59,6 +60,7 @@ export function SubjectDetail() {
   };
 
   const subjectId = getSubjectId(subjectData) || subject;
+  const subjectLabel = subjectData?.label || subject;
 
   return (
     <div className="space-y-6">
@@ -98,6 +100,15 @@ export function SubjectDetail() {
               </p>
             </div>
           </div>
+          <ProcessingMenu
+            project={project!}
+            xsiType="xnat:subjectData"
+            contextParams={{
+              subject: `/archive/projects/${project}/subjects/${subjectId}`
+            }}
+            rootElement="xnat:subjectData"
+            label={subjectLabel}
+          />
         </div>
       </div>
 

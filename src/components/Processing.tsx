@@ -22,11 +22,14 @@ import {
   Square,
   Info,
   XCircle,
+  Rocket,
+  StopCircle,
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatContainer, XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
 import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { ContainerLogViewer } from './ContainerLogViewer';
 import { getWorkflowContainerId } from '../utils/workflows';
 
 const TIMEFRAME_OPTIONS = [
@@ -229,6 +232,8 @@ export function Processing() {
   });
   const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
+  const [selectedLogContainerId, setSelectedLogContainerId] = useState<string | null>(null);
+  const [killingContainers, setKillingContainers] = useState<Set<string>>(new Set());
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -409,6 +414,30 @@ export function Processing() {
     setFilters({ project: '', label: '', status: '', user: '', pipeline: '' });
   };
 
+  const handleKillContainer = async (containerId: string) => {
+    if (!client || !confirm('Are you sure you want to kill this container?')) return;
+
+    setKillingContainers((prev) => new Set(prev).add(containerId));
+    try {
+      const success = await client.killContainer(containerId);
+      if (success) {
+        containersQuery.refetch();
+        workflowsQuery.refetch();
+      } else {
+        alert('Failed to kill container. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error killing container:', error);
+      alert('Error killing container: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setKillingContainers((prev) => {
+        const next = new Set(prev);
+        next.delete(containerId);
+        return next;
+      });
+    }
+  };
+
   if (!client) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -423,12 +452,23 @@ export function Processing() {
   return (
     <div className="space-y-6">
       <div className="border-b border-gray-200 pb-5">
-        <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-          Processing Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Monitor workflows launched across this XNAT instance and review recent container activity.
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
+              Processing Dashboard
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Monitor workflows launched across this XNAT instance and review recent container activity.
+            </p>
+          </div>
+          <Link
+            to="/processing/commands"
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Rocket className="h-4 w-4" />
+            Launch Processing
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -1130,6 +1170,10 @@ export function Processing() {
                 (typeof container.id === 'string' || typeof container.id === 'number' ? String(container.id) : 'Container');
               const userId = typeof container['user-id'] === 'string' ? container['user-id'] : '—';
               const projectId = typeof container['project-id'] === 'string' ? container['project-id'] : '';
+              const containerId = typeof container.id === 'string' || typeof container.id === 'number' ? String(container.id) : '';
+              const workflowId = typeof container['workflow-id'] === 'string' || typeof container['workflow-id'] === 'number' ? String(container['workflow-id']) : '';
+              const isRunning = status.toLowerCase() === 'running' || status.toLowerCase() === 'active';
+              const isKilling = killingContainers.has(containerId);
 
               return (
                 <div key={String(containerKey)} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
@@ -1141,12 +1185,61 @@ export function Processing() {
                         <div className="text-xs text-gray-500">
                           {userId}
                           {projectId ? ` • ${projectId}` : ''}
+                          {workflowId && (
+                            <>
+                              {' • '}
+                              <Link
+                                to={`/processing/workflows/${encodeURIComponent(workflowId)}`}
+                                className="text-blue-600 hover:text-blue-500 inline-flex items-center gap-1"
+                              >
+                                <Activity className="h-3 w-3" />
+                                Workflow {workflowId}
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(status))}>
-                      {status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={clsx('rounded-full px-2.5 py-0.5 text-xs font-medium', getStatusPillColor(status))}>
+                        {status}
+                      </span>
+                      {containerId && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedContainerId(containerId)}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLogContainerId(containerId)}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            <FileText className="h-3 w-3" />
+                            Logs
+                          </button>
+                        </>
+                      )}
+                      {isRunning && containerId && (
+                        <button
+                          type="button"
+                          onClick={() => handleKillContainer(containerId)}
+                          disabled={isKilling}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isKilling ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <StopCircle className="h-3 w-3" />
+                          )}
+                          {isKilling ? 'Stopping...' : 'Kill'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-2 text-xs text-gray-500">Updated {formatDate(statusDate)}</div>
                 </div>
@@ -1162,6 +1255,10 @@ export function Processing() {
       <WorkflowContainerSummaryModal
         containerId={selectedContainerId}
         onClose={() => setSelectedContainerId(null)}
+      />
+      <ContainerLogViewer
+        containerId={selectedLogContainerId}
+        onClose={() => setSelectedLogContainerId(null)}
       />
     </div>
   );

@@ -18,6 +18,7 @@ import {
   X,
   Microscope
 } from 'lucide-react';
+import { ProcessingMenu } from './ProcessingMenu';
 import { useState } from 'react';
 import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
@@ -212,6 +213,17 @@ export function Scans() {
           <p className="mt-1 text-sm text-gray-500">
             {experimentData?.label || experiment} • {filteredScans.length} scans
           </p>
+        </div>
+        <div className="mt-4 sm:mt-0">
+          <ProcessingMenu
+            project={project!}
+            xsiType="xnat:imageScanData"
+            contextParams={{
+              session: `/archive/experiments/${experimentData?.id || experiment}`
+            }}
+            rootElement="xnat:imageScanData"
+            label={experimentData?.label || experiment}
+          />
         </div>
       </div>
 
