@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
@@ -9,16 +10,19 @@ import {
   User,
   Calendar,
   Activity,
-  Eye
+  Eye,
+  FolderCog
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
+import { ManageFilesDialog } from './ManageFilesDialog';
 
 export function ProjectDetail() {
   const { project } = useParams<{
     project: string;
   }>();
-  
+
   const { client } = useXnat();
+  const [isManageFilesOpen, setIsManageFilesOpen] = useState(false);
 
   const { data: projectData, isLoading, error } = useQuery({
     queryKey: ['project', project],
@@ -97,15 +101,25 @@ export function ProjectDetail() {
               </p>
             </div>
           </div>
-          <ProcessingMenu
-            project={project!}
-            xsiType="xnat:projectData"
-            contextParams={{
-              project: `/archive/projects/${project}`
-            }}
-            rootElement="xnat:projectData"
-            label={projectData?.name || project}
-          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsManageFilesOpen(true)}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <FolderCog className="h-4 w-4" />
+              Manage Files
+            </button>
+            <ProcessingMenu
+              project={project!}
+              xsiType="xnat:projectData"
+              contextParams={{
+                project: `/archive/projects/${project}`
+              }}
+              rootElement="xnat:projectData"
+              label={projectData?.name || project}
+            />
+          </div>
         </div>
       </div>
 
@@ -323,6 +337,16 @@ export function ProjectDetail() {
           </div>
         </div>
       </div>
+
+      {project && (
+        <ManageFilesDialog
+          isOpen={isManageFilesOpen}
+          onClose={() => setIsManageFilesOpen(false)}
+          projectId={project}
+          subjectId=""
+          experimentId=""
+        />
+      )}
     </div>
   );
 }

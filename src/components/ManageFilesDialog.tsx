@@ -407,14 +407,14 @@ export function ManageFilesDialog({
   const scansQuery = useQuery({
     queryKey: ['manage-files', 'scans', projectId, subjectId, experimentId],
     queryFn: () => client?.getScans(projectId, subjectId, experimentId) ?? [],
-    enabled: isOpen && !!client,
+    enabled: isOpen && !!client && !!experimentId,
     staleTime: 30_000,
   });
 
   const assessorsQuery = useQuery({
     queryKey: ['manage-files', 'assessors', projectId, subjectId, experimentId],
     queryFn: () => client?.getAssessors(projectId, subjectId, experimentId) ?? [],
-    enabled: isOpen && !!client,
+    enabled: isOpen && !!client && !!experimentId,
     staleTime: 30_000,
   });
 
@@ -517,7 +517,7 @@ const assessorResourceGroups = useMemo(() => {
       return;
     }
     if (!experimentId) {
-      window.alert('Experiment ID is missing; cannot prepare download.');
+      window.alert('Bulk download is only available for experiments. Please download individual resources.');
       return;
     }
 
@@ -1202,6 +1202,15 @@ const assessorResourceGroups = useMemo(() => {
 
   const headerLabel = experimentLabel || DEFAULT_EXPERIMENT_LABEL;
 
+  // Build breadcrumb based on available IDs
+  let breadcrumb = projectId;
+  if (subjectId) {
+    breadcrumb += ` / ${subjectId}`;
+  }
+  if (experimentId) {
+    breadcrumb += ` / ${headerLabel}`;
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
       <div className="flex h-full w-full max-h-[90vh] max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/10">
@@ -1209,35 +1218,39 @@ const assessorResourceGroups = useMemo(() => {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Manage Files</h2>
             <p className="text-sm text-gray-500">
-              {projectId} / {subjectId} / {headerLabel}
+              {breadcrumb}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              Archive as
-              <select
-                value={archiveFormat}
-                onChange={(event) =>
-                  setArchiveFormat(event.target.value === 'tar.gz' ? 'tar.gz' : 'zip')
-                }
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="zip">ZIP</option>
-                <option value="tar.gz">TAR.GZ</option>
-              </select>
-            </label>
-            <button
-              onClick={handleDownloadSelected}
-              disabled={!hasSelectedResources}
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition ${
-                hasSelectedResources
-                  ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 hover:text-blue-800'
-                  : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
-              }`}
-            >
-              <Download className="h-4 w-4" />
-              Download Selected
-            </button>
+            {experimentId && (
+              <>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  Archive as
+                  <select
+                    value={archiveFormat}
+                    onChange={(event) =>
+                      setArchiveFormat(event.target.value === 'tar.gz' ? 'tar.gz' : 'zip')
+                    }
+                    className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="zip">ZIP</option>
+                    <option value="tar.gz">TAR.GZ</option>
+                  </select>
+                </label>
+                <button
+                  onClick={handleDownloadSelected}
+                  disabled={!hasSelectedResources}
+                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+                    hasSelectedResources
+                      ? 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-300 hover:text-blue-800'
+                      : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  <Download className="h-4 w-4" />
+                  Download Selected
+                </button>
+              </>
+            )}
             <button
               onClick={refreshAll}
               className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition hover:border-blue-300 hover:text-blue-700"

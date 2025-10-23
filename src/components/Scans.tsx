@@ -402,6 +402,17 @@ export function Scans() {
                         <Download className="h-3 w-3 mr-1" />
                         Download
                       </button>
+
+                      <ProcessingMenu
+                        project={project!}
+                        xsiType="xnat:imageScanData"
+                        contextParams={{
+                          session: `/archive/experiments/${experimentId}`,
+                          scan: `/archive/experiments/${experimentId}/scans/${scan.id}`
+                        }}
+                        rootElement="xnat:imageScanData"
+                        label={scan.series_description || `Scan ${scan.id}`}
+                      />
                     </div>
 
                     <div className="flex items-center text-xs text-gray-500">

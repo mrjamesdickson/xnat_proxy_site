@@ -840,6 +840,17 @@ export class XnatApiClient {
     experimentId: string,
     scope: XnatResourceScope
   ): string {
+    // Handle project-level resources
+    if (!subjectId && !experimentId) {
+      return `/data/projects/${projectId}/resources`;
+    }
+
+    // Handle subject-level resources
+    if (subjectId && !experimentId) {
+      return `/data/projects/${projectId}/subjects/${subjectId}/resources`;
+    }
+
+    // Handle experiment-level and below
     const root = `/data/projects/${projectId}/subjects/${subjectId}/experiments/${experimentId}`;
 
     switch (scope.type) {
