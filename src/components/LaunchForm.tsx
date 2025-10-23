@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
+import { useContainerJobs } from '../contexts/ContainerJobsContext';
 import type { XnatLaunchUiInput, XnatLaunchReport } from '../services/xnat-api';
 
 export interface LaunchFormProps {
@@ -31,6 +32,7 @@ export function LaunchForm({
 }: LaunchFormProps) {
   const { client } = useXnat();
   const navigate = useNavigate();
+  const { openWidget } = useContainerJobs();
   const [formValues, setFormValues] = useState<Record<string, string>>(initialParams);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -148,6 +150,9 @@ export function LaunchForm({
         console.log('✅ Launch succeeded, setting success state');
         setIsSubmitting(false);
         setSubmitResult({ success: true, message });
+
+        // Open the container jobs widget to show the new job
+        openWidget();
 
         if (onSuccess) {
           onSuccess(report);
