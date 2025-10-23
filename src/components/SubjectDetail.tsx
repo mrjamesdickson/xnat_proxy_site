@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
@@ -8,17 +9,20 @@ import {
   Calendar,
   FileImage,
   Eye,
-  Activity
+  Activity,
+  FolderCog
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
+import { ManageFilesDialog } from './ManageFilesDialog';
 
 export function SubjectDetail() {
   const { project, subject } = useParams<{
     project: string;
     subject: string;
   }>();
-  
+
   const { client } = useXnat();
+  const [isManageFilesOpen, setIsManageFilesOpen] = useState(false);
 
   const { data: subjectData, isLoading, error } = useQuery({
     queryKey: ['subject', project, subject],
@@ -100,15 +104,25 @@ export function SubjectDetail() {
               </p>
             </div>
           </div>
-          <ProcessingMenu
-            project={project!}
-            xsiType="xnat:subjectData"
-            contextParams={{
-              subject: `/archive/projects/${project}/subjects/${subjectId}`
-            }}
-            rootElement="xnat:subjectData"
-            label={subjectLabel}
-          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsManageFilesOpen(true)}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <FolderCog className="h-4 w-4" />
+              Manage Files
+            </button>
+            <ProcessingMenu
+              project={project!}
+              xsiType="xnat:subjectData"
+              contextParams={{
+                subject: `/archive/projects/${project}/subjects/${subjectId}`
+              }}
+              rootElement="xnat:subjectData"
+              label={subjectLabel}
+            />
+          </div>
         </div>
       </div>
 
@@ -312,6 +326,16 @@ export function SubjectDetail() {
           )}
         </div>
       </div>
+
+      {project && subject && (
+        <ManageFilesDialog
+          isOpen={isManageFilesOpen}
+          onClose={() => setIsManageFilesOpen(false)}
+          projectId={project}
+          subjectId={subject}
+          experimentId=""
+        />
+      )}
     </div>
   );
 }

@@ -39,7 +39,7 @@ export function LaunchForm({
     queryKey: ['launch-ui', wrapperId, project, initialParams],
     enabled: !!client,
     queryFn: () => {
-      // Extract IDs from archive paths for the launch UI endpoint
+      // Pass archive paths directly - XNAT expects full paths for launch UI
       const launchParams: Record<string, string> = {};
 
       Object.entries(initialParams).forEach(([key, value]) => {
@@ -48,14 +48,7 @@ export function LaunchForm({
           return;
         }
 
-        // Extract ID from archive paths like /archive/experiments/XNAT_E00498
-        if (value.startsWith('/archive/')) {
-          const parts = value.split('/');
-          const id = parts[parts.length - 1]; // Get last part (the ID)
-          launchParams[key] = id;
-        } else {
-          launchParams[key] = value;
-        }
+        launchParams[key] = value;
       });
 
       console.log('📋 Launch UI params:', { original: initialParams, processed: launchParams });
@@ -65,7 +58,29 @@ export function LaunchForm({
   });
 
   const launchUi = launchUiQuery.data;
-  const inputs = launchUi?.['input-config'] ?? launchUi?.inputs ?? [];
+
+  // Merge input-config with input-values to get select options
+  const inputs = useMemo(() => {
+    const inputConfig = launchUi?.['input-config'] ?? launchUi?.inputs ?? [];
+    const inputValues = launchUi?.['input-values'] ?? [];
+
+    // Create a map of values by input name
+    const valuesMap = new Map();
+    inputValues.forEach((inputValue) => {
+      if (inputValue.values && inputValue.values.length > 0) {
+        valuesMap.set(inputValue.name, inputValue.values);
+      }
+    });
+
+    // Merge values into input config
+    const merged = inputConfig.map((input: XnatLaunchUiInput) => ({
+      ...input,
+      values: valuesMap.get(input.name) || input.values || []
+    }));
+
+    console.log('📋 Merged inputs with values:', merged.filter(i => i.values && i.values.length > 0));
+    return merged;
+  }, [launchUi]);
 
   // Clear any error state when component mounts or wrapper changes
   useEffect(() => {
@@ -201,15 +216,29 @@ export function LaunchForm({
   }
 
   if (launchUiQuery.isError || !launchUi) {
+    const errorMessage = launchUiQuery.error instanceof Error
+      ? launchUiQuery.error.message
+      : 'Please check your configuration and try again.';
+
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
         <div className="flex items-center gap-2">
           <AlertCircle className="h-5 w-5" />
           <span className="font-medium">Unable to load launch form.</span>
         </div>
-        <p className="mt-2">
-          {launchUiQuery.error instanceof Error ? launchUiQuery.error.message : 'Please check your configuration and try again.'}
-        </p>
+        <p className="mt-2">{errorMessage}</p>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-medium">Debug Info</summary>
+          <pre className="mt-2 overflow-auto rounded bg-red-100 p-2 text-xs">
+            {JSON.stringify({
+              wrapperId,
+              project,
+              rootElement,
+              initialParams,
+              error: errorMessage
+            }, null, 2)}
+          </pre>
+        </details>
       </div>
     );
   }
