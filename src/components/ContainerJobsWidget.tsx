@@ -17,7 +17,7 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Fetch recent workflows and filter for containers
-  const { data: containers, refetch, isLoading: isLoadingWorkflows, isFetching, error: workflowsError } = useQuery({
+  const { data: containers, refetch, isLoading: isLoadingWorkflows, isFetching } = useQuery({
     queryKey: ['container-jobs'],
     enabled: !!client && isOpen,
     refetchInterval: 5000, // Poll every 5 seconds
@@ -247,7 +247,6 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
                 const wfid = workflow.wfid || workflow.ID;
                 const pipelineName = workflow.pipeline_name || workflow.pipelineName || workflow.label || 'Unknown Pipeline';
                 const launchTime = workflow.launch_time || workflow.launchTime || workflow.create_date;
-                const userId = workflow.user_id || workflow.userId;
                 const comments = workflow.comments;
                 const externalId = workflow.external_id || workflow.externalId;
                 // Create a unique key using wfid (unique workflow instance ID) or fallback to index

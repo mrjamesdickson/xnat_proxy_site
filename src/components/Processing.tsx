@@ -26,7 +26,7 @@ import {
   StopCircle,
 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
-import type { XnatContainer, XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
+import type { XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
 import { WorkflowBuildDirModal } from './WorkflowBuildDir';
 import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
 import { ContainerLogViewer } from './ContainerLogViewer';
@@ -294,7 +294,6 @@ export function Processing() {
   });
 
   const workflows = workflowsQuery.data ?? [];
-  const containers = containersQuery.data ?? [];
   const systemStats = systemQuery.data ?? null;
 
   const statusOptions = useMemo(() => {
