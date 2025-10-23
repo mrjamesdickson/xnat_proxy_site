@@ -20,8 +20,16 @@ const isApiError = (value: unknown): value is ApiError => typeof value === 'obje
 
 export function Login() {
   const { login, isLoading } = useXnat();
+
+  // In production (deployed at /morpheus/), use current server origin
+  // In dev mode, use env variable or default demo server
+  const isProduction = !import.meta.env.DEV;
+  const defaultBaseURL = isProduction
+    ? window.location.origin
+    : (import.meta.env.VITE_DEFAULT_XNAT_URL || 'http://demo02.xnatworks.io');
+
   const [formData, setFormData] = useState({
-    baseURL: import.meta.env.VITE_DEFAULT_XNAT_URL || 'http://demo02.xnatworks.io',
+    baseURL: defaultBaseURL,
     username: 'admin',
     password: 'admin',
   });
@@ -93,25 +101,27 @@ export function Login() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="baseURL" className="block text-sm font-medium leading-6 text-gray-900">
-                XNAT Server URL
-              </label>
-              <div className="mt-2">
-                <input
-                  id="baseURL"
-                  name="baseURL"
-                  type="url"
-                  placeholder="https://your-xnat-server.com"
-                  required
-                  autoFocus
-                  value={formData.baseURL}
-                  onChange={(event) => handleInputChange('baseURL', event.target.value)}
-                  disabled={isLoading}
-                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 disabled:ring-gray-200 sm:text-sm sm:leading-6"
-                />
+            {!isProduction && (
+              <div>
+                <label htmlFor="baseURL" className="block text-sm font-medium leading-6 text-gray-900">
+                  XNAT Server URL
+                </label>
+                <div className="mt-2">
+                  <input
+                    id="baseURL"
+                    name="baseURL"
+                    type="url"
+                    placeholder="https://your-xnat-server.com"
+                    required
+                    autoFocus
+                    value={formData.baseURL}
+                    onChange={(event) => handleInputChange('baseURL', event.target.value)}
+                    disabled={isLoading}
+                    className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 disabled:ring-gray-200 sm:text-sm sm:leading-6"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div>
               <label htmlFor="username" className="block text-sm font-medium leading-6 text-gray-900">
@@ -125,6 +135,7 @@ export function Login() {
                   placeholder="Enter your username"
                   autoComplete="username"
                   required
+                  autoFocus={isProduction}
                   value={formData.username}
                   onChange={(event) => handleInputChange('username', event.target.value)}
                   disabled={isLoading}

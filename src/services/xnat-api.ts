@@ -711,14 +711,24 @@ export class XnatApiClient {
 
   constructor(config: XnatConfig) {
     this.config = config;
-    
-    // Use proxy in development if baseURL is not localhost
+
+    // Determine baseURL based on environment
     const isDevelopment = import.meta.env.DEV;
+    const isProduction = !isDevelopment;
     const isLocalhost = config.baseURL.includes('localhost') || config.baseURL.includes('127.0.0.1');
-    const baseURL = isDevelopment && !isLocalhost 
-      ? '/api/xnat' 
-      : config.baseURL;
-    
+
+    let baseURL: string;
+    if (isProduction) {
+      // In production (deployed at /morpheus/), use relative URLs to same server
+      baseURL = '';
+    } else if (!isLocalhost) {
+      // In dev mode with remote server, use proxy
+      baseURL = '/api/xnat';
+    } else {
+      // In dev mode with localhost, use actual baseURL
+      baseURL = config.baseURL;
+    }
+
     this.client = axios.create({
       baseURL,
       timeout: 30000,
