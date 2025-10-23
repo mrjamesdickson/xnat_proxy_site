@@ -36,6 +36,41 @@ export function XnatProvider({ children }: XnatProviderProps) {
   useEffect(() => {
     const initializeFromStorage = async () => {
       try {
+        const isProduction = !import.meta.env.DEV;
+
+        // In production (deployed as XNAT plugin), try to use existing XNAT session
+        if (isProduction) {
+          try {
+            console.log('Production mode: checking for existing XNAT session');
+            const productionConfig: XnatConfig = {
+              baseURL: window.location.origin,
+            };
+
+            const apiClient = new XnatApiClient(productionConfig);
+
+            // Try to get current user with existing session cookie
+            const user = await apiClient.getCurrentUser();
+
+            // If successful, we have a valid XNAT session
+            console.log('Existing XNAT session is valid, user:', user.username);
+            setClient(apiClient);
+            setConfig(productionConfig);
+            setCurrentUser(user);
+            setIsAuthenticated(true);
+
+            // Store for future use
+            localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify({ baseURL: productionConfig.baseURL }));
+            localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+
+            setIsLoading(false);
+            return;
+          } catch (error) {
+            console.log('No valid XNAT session found in production:', error);
+            // Fall through to dev mode login
+          }
+        }
+
+        // Dev mode or production fallback: check localStorage
         const storedConfig = localStorage.getItem(STORAGE_KEYS.CONFIG);
         const storedJSessionId = localStorage.getItem(STORAGE_KEYS.JSESSIONID);
         const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
@@ -48,23 +83,23 @@ export function XnatProvider({ children }: XnatProviderProps) {
           };
 
           const apiClient = new XnatApiClient(configWithSession);
-          
+
           try {
             // Add timeout to ping request to prevent hanging
             const timeoutPromise = new Promise<boolean>((_, reject) => {
               setTimeout(() => reject(new Error('Ping timeout')), 5000);
             });
-            
+
             const isOnline = await Promise.race([
               apiClient.ping(),
               timeoutPromise
             ]);
-            
+
             if (isOnline) {
               setClient(apiClient);
               setConfig(configWithSession);
               setIsAuthenticated(true);
-              
+
               if (storedUser) {
                 setCurrentUser(JSON.parse(storedUser));
               } else {

@@ -38,6 +38,7 @@ import { WorkflowDetail } from './components/WorkflowDetail';
 import { WorkflowLog } from './components/WorkflowLog';
 import { CommandBrowser } from './components/CommandBrowser';
 import { CommandLauncher } from './components/CommandLauncher';
+import { SystemMonitoring } from './components/SystemMonitoring';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -94,6 +95,7 @@ function AppContent() {
         <Route path="/admin/event-service" element={<AdminEventService />} />
         <Route path="/admin/tasks" element={<AdminTasks />} />
         <Route path="/api" element={<ApiExplorer />} />
+        <Route path="/monitoring" element={<SystemMonitoring />} />
       </Routes>
     </Layout>
   );

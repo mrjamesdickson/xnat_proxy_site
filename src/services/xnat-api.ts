@@ -436,6 +436,28 @@ export interface XnatSystemStats {
   version?: string;
 }
 
+export interface XnatSystemMonitoring {
+  cpu?: {
+    usage?: number;
+    cores?: number;
+    load?: number[];
+  };
+  memory?: {
+    used?: number;
+    total?: number;
+    free?: number;
+    usedPercent?: number;
+  };
+  disk?: {
+    used?: number;
+    total?: number;
+    free?: number;
+    usedPercent?: number;
+  };
+  uptime?: number;
+  timestamp?: number;
+}
+
 // Container Service Command and Launch types
 export interface XnatCommand {
   id: number;
@@ -735,10 +757,8 @@ export class XnatApiClient {
       headers: {
         'Accept': 'application/json, application/xml, text/plain, */*',
       },
-      // Add CORS headers for development
-      ...(isDevelopment && {
-        withCredentials: true,
-      }),
+      // Always include credentials to send session cookies
+      withCredentials: true,
     });
 
     // Use basic auth - don't set Cookie header manually as browsers don't allow it
@@ -2318,6 +2338,25 @@ export class XnatApiClient {
       return null;
     } catch (error) {
       console.warn('Error fetching system stats:', error);
+      return null;
+    }
+  }
+
+  async getSystemMonitoring(): Promise<XnatSystemMonitoring | null> {
+    try {
+      const response = await this.client.get('/monitoring', {
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      // Parse the monitoring data from response
+      if (response.data) {
+        return response.data;
+      }
+      return null;
+    } catch (error) {
+      console.warn('Error fetching system monitoring:', error);
       return null;
     }
   }

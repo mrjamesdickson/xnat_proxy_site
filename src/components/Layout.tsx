@@ -23,7 +23,8 @@ import {
   Moon,
   FolderInput,
   FileArchive,
-  Layers
+  Layers,
+  Monitor
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -71,6 +72,7 @@ const navigation = [
     ]
   },
   { name: 'Search', href: '/search', icon: Search },
+  { name: 'Monitoring', href: '/monitoring', icon: Monitor },
   { name: 'API Explorer', href: '/api', icon: BookOpen },
   {
     name: 'Administer',
