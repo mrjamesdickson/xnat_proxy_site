@@ -6,6 +6,7 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  Braces,
   CheckCircle,
   Clock,
   Cpu,
@@ -28,8 +29,9 @@ import {
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatWorkflow, XnatSystemStats } from '../services/xnat-api';
 import { WorkflowBuildDirModal } from './WorkflowBuildDir';
-import { WorkflowContainerSummaryModal } from './WorkflowContainerSummary';
+import { WorkflowContainerSummaryModal, WorkflowContainerRawModal } from './WorkflowContainerSummary';
 import { ContainerLogViewer } from './ContainerLogViewer';
+import { WorkflowContainerLogsModal } from './WorkflowContainerLogs';
 import { getWorkflowContainerId } from '../utils/workflows';
 
 const TIMEFRAME_OPTIONS = [
@@ -233,6 +235,9 @@ export function Processing() {
   const [selectedBuildDirWorkflowId, setSelectedBuildDirWorkflowId] = useState<string | null>(null);
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
   const [selectedLogContainerId, setSelectedLogContainerId] = useState<string | null>(null);
+  const [selectedStdoutContainerId, setSelectedStdoutContainerId] = useState<string | null>(null);
+  const [selectedStderrContainerId, setSelectedStderrContainerId] = useState<string | null>(null);
+  const [selectedRawJsonContainerId, setSelectedRawJsonContainerId] = useState<string | null>(null);
   const [killingContainers, setKillingContainers] = useState<Set<string>>(new Set());
 
   const isAdminUser = useMemo(() => {
@@ -284,6 +289,12 @@ export function Processing() {
     enabled: !!client,
     queryFn: () => client?.getContainers() || [],
     refetchInterval: 15000,
+  });
+
+  const rawJsonContainerQuery = useQuery({
+    queryKey: ['container-raw-json', selectedRawJsonContainerId],
+    enabled: !!client && !!selectedRawJsonContainerId,
+    queryFn: () => (client && selectedRawJsonContainerId ? client.getContainer(selectedRawJsonContainerId) : Promise.resolve(null)),
   });
 
   const systemQuery = useQuery<XnatSystemStats | null>({
@@ -854,9 +865,36 @@ export function Processing() {
                                   type="button"
                                   onClick={() => setSelectedContainerId(containerId)}
                                   className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                                  title="View Container Summary"
                                 >
                                   <Eye className="h-3 w-3" />
-                                  Summary
+                                </button>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRawJsonContainerId(containerId)}
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                                  title="View Raw JSON"
+                                >
+                                  <Braces className="h-3 w-3" />
+                                </button>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedStdoutContainerId(containerId)}
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                                  title="View StdOut.log"
+                                >
+                                  <FileText className="h-3 w-3" />
+                                </button>
+                                <span className="text-gray-300">•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedStderrContainerId(containerId)}
+                                  className="inline-flex items-center gap-1 text-red-600 hover:text-red-500"
+                                  title="View StdErr.log"
+                                >
+                                  <FileText className="h-3 w-3" />
                                 </button>
                                 {(status.toLowerCase() === 'running' || status.toLowerCase() === 'active') && (
                                   <>
@@ -1182,6 +1220,21 @@ export function Processing() {
       <ContainerLogViewer
         containerId={selectedLogContainerId}
         onClose={() => setSelectedLogContainerId(null)}
+      />
+      <WorkflowContainerLogsModal
+        containerId={selectedStdoutContainerId}
+        logType="stdout"
+        onClose={() => setSelectedStdoutContainerId(null)}
+      />
+      <WorkflowContainerLogsModal
+        containerId={selectedStderrContainerId}
+        logType="stderr"
+        onClose={() => setSelectedStderrContainerId(null)}
+      />
+      <WorkflowContainerRawModal
+        container={rawJsonContainerQuery.data ?? null}
+        open={!!selectedRawJsonContainerId}
+        onClose={() => setSelectedRawJsonContainerId(null)}
       />
     </div>
   );

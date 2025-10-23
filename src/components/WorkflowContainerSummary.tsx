@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, Copy, Loader2, RefreshCcw, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
+import { AlertCircle, Copy, Loader2, RefreshCcw, X, Maximize2, Minimize2 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatContainer } from '../services/xnat-api';
-import { WorkflowContainerLogsModal } from './WorkflowContainerLogs';
 
 interface WorkflowContainerSummaryModalProps {
   containerId: string | null;
@@ -96,9 +95,6 @@ const extractField = (container: XnatContainer | null, keys: string[]): unknown 
 
 export function WorkflowContainerSummaryModal({ containerId, onClose }: WorkflowContainerSummaryModalProps) {
   const { client } = useXnat();
-  const [showStdout, setShowStdout] = useState(false);
-  const [showStderr, setShowStderr] = useState(false);
-  const [showRawJson, setShowRawJson] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const {
@@ -125,12 +121,6 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [containerId, onClose]);
-
-  useEffect(() => {
-    if (!container) {
-      setShowRawJson(false);
-    }
-  }, [container]);
 
   if (!containerId) {
     return null;
@@ -400,31 +390,6 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
           </button>
           <button
             type="button"
-            onClick={() => setShowRawJson(true)}
-            disabled={!container}
-            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <FileText className="mr-2 h-3.5 w-3.5" />
-            View Raw JSON
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowStdout(true)}
-            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            <FileText className="mr-2 h-3.5 w-3.5" />
-            View StdOut.log
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowStderr(true)}
-            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            <FileText className="mr-2 h-3.5 w-3.5" />
-            View StdErr.log
-          </button>
-          <button
-            type="button"
             onClick={onClose}
             className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
@@ -465,32 +430,17 @@ export function WorkflowContainerSummaryModal({ containerId, onClose }: Workflow
 
         <div className="flex-1 overflow-y-auto p-4">{renderBody()}</div>
       </div>
-      <WorkflowContainerLogsModal
-        containerId={showStdout ? containerId : null}
-        logType="stdout"
-        onClose={() => setShowStdout(false)}
-      />
-      <WorkflowContainerLogsModal
-        containerId={showStderr ? containerId : null}
-        logType="stderr"
-        onClose={() => setShowStderr(false)}
-      />
-      <WorkflowContainerRawModal
-        container={container}
-        open={showRawJson}
-        onClose={() => setShowRawJson(false)}
-      />
     </div>
  );
 }
 
-interface WorkflowContainerRawModalProps {
+export interface WorkflowContainerRawModalProps {
   container: XnatContainer | null;
   open: boolean;
   onClose: () => void;
 }
 
-function WorkflowContainerRawModal({ container, open, onClose }: WorkflowContainerRawModalProps) {
+export function WorkflowContainerRawModal({ container, open, onClose }: WorkflowContainerRawModalProps) {
   useEffect(() => {
     if (!open) return undefined;
 
