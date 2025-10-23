@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
 import { XnatProvider, useXnat } from './contexts/XnatContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { ContainerJobsProvider } from './contexts/ContainerJobsContext';
 import { Login } from './components/Login';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
@@ -106,9 +107,11 @@ function App() {
     <ThemeProvider>
       <QueryProvider>
         <XnatProvider>
-          <Router basename={basename}>
-            <AppContent />
-          </Router>
+          <ContainerJobsProvider>
+            <Router basename={basename}>
+              <AppContent />
+            </Router>
+          </ContainerJobsProvider>
         </XnatProvider>
       </QueryProvider>
     </ThemeProvider>

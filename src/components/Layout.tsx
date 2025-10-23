@@ -22,13 +22,16 @@ import {
   Sun,
   Moon,
   FolderInput,
-  FileArchive
+  FileArchive,
+  Layers
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ChatWidget } from './ChatWidget';
 import { RouteDebugPanel } from './RouteDebugPanel';
+import { ContainerJobsWidget } from './ContainerJobsWidget';
+import { useContainerJobs } from '../contexts/ContainerJobsContext';
 import type { XnatProject, XnatProjectAccess, XnatSavedSearch } from '../services/xnat-api';
 import { useTheme } from '../contexts/ThemeContext';
 import { THEME_OPTIONS, type ThemeMode } from '../contexts/theme-types';
@@ -100,7 +103,8 @@ export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const [searchValue, setSearchValue] = useState('');
   const { theme, setTheme } = useTheme();
-  
+  const { isWidgetOpen, toggleWidget, closeWidget } = useContainerJobs();
+
   // Check if we're on the viewer route to adjust layout
   const isViewerRoute = location.pathname.includes('/viewer');
 
@@ -518,6 +522,21 @@ export function Layout({ children }: LayoutProps) {
 
               {/* Desktop: Just user menu */}
               <div className="hidden md:flex md:ml-auto md:items-center md:space-x-4">
+                <button
+                  onClick={toggleWidget}
+                  className={clsx(
+                    'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    isWidgetOpen
+                      ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-950/60'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-300 dark:hover:bg-slate-700'
+                  )}
+                  aria-label="Toggle Container Jobs"
+                  title="Container Jobs"
+                >
+                  <Layers className="h-4 w-4" />
+                  <span>Jobs</span>
+                </button>
+
                 <div className="flex items-center space-x-2">
                   <label
                     htmlFor="theme-select"
@@ -717,6 +736,7 @@ export function Layout({ children }: LayoutProps) {
           </main>
         )}
         {!isViewerRoute && <ChatWidget />}
+        <ContainerJobsWidget isOpen={isWidgetOpen} onClose={closeWidget} />
         <RouteDebugPanel />
       </div>
     </div>
