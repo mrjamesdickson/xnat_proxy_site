@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, Loader2, Play, Rocket, X } from 'lucide-react';
+import { Loader2, Play, Rocket, X } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import { LaunchForm } from './LaunchForm';
 import type { XnatCommand, XnatCommandWrapper } from '../services/xnat-api';
