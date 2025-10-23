@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Loader2, Play, Rocket, X } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
@@ -20,6 +20,8 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
     command: XnatCommand;
     wrapper: XnatCommandWrapper;
   } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
 
   // Fetch available commands for this context
   const commandsQuery = useQuery({
@@ -49,6 +51,29 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
 
   const commands = commandsQuery.data ?? [];
 
+  // Calculate dropdown position when opened
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const dropdownWidth = 320; // w-80 = 320px
+      const viewportWidth = window.innerWidth;
+
+      // Position below the button
+      const top = rect.bottom + 8; // 8px margin (mt-2)
+
+      // Calculate right position to align dropdown with button's right edge
+      // But ensure it doesn't go off screen
+      let right = viewportWidth - rect.right;
+
+      // If dropdown would go off left edge, align to left instead
+      if (rect.right - dropdownWidth < 0) {
+        right = viewportWidth - (rect.left + dropdownWidth);
+      }
+
+      setDropdownPosition({ top, right });
+    }
+  }, [isOpen]);
+
   const handleLaunchClick = (command: XnatCommand, wrapper: XnatCommandWrapper) => {
     setSelectedWrapper({ command, wrapper });
   };
@@ -68,13 +93,14 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
     <>
       <div className="relative inline-block">
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+          aria-label="Run Processing"
+          title="Run Processing"
         >
-          <Rocket className="h-4 w-4" />
-          Run Processing
-          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <Rocket className="h-5 w-5" />
         </button>
 
         {isOpen && (
@@ -83,7 +109,10 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
               className="fixed inset-0 z-10"
               onClick={() => setIsOpen(false)}
             />
-            <div className="absolute right-0 z-20 mt-2 w-80 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+            <div
+              className="fixed z-20 w-80 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+              style={{ top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}
+            >
               <div className="py-1">
                 <div className="px-4 py-2 border-b border-gray-200">
                   <div className="text-sm font-semibold text-gray-900">Available Commands</div>
@@ -105,7 +134,7 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
                     No commands available for this context
                   </div>
                 ) : (
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
                     {commands.map((item: any) => {
                       if (!item) return null;
                       const { command, wrapper } = item;
@@ -115,23 +144,21 @@ export function ProcessingMenu({ project, xsiType, contextParams, rootElement, l
                           key={wrapper.id}
                           type="button"
                           onClick={() => handleLaunchClick(command, wrapper)}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                          className="w-full text-left px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 transition-colors flex items-start gap-3"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-gray-900 truncate">
-                                {command.name}
-                              </div>
-                              <div className="text-xs text-gray-600 truncate">
-                                {wrapper.name}
-                              </div>
-                              {wrapper.description && (
-                                <div className="text-xs text-gray-500 mt-1 line-clamp-2">
-                                  {wrapper.description}
-                                </div>
-                              )}
+                          <Play className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 mb-0.5">
+                              {command.name}
                             </div>
-                            <Play className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                            <div className="text-xs text-gray-600 mb-1">
+                              {wrapper.name}
+                            </div>
+                            {wrapper.description && (
+                              <div className="text-xs text-gray-500 line-clamp-2">
+                                {wrapper.description}
+                              </div>
+                            )}
                           </div>
                         </button>
                       );

@@ -16,7 +16,11 @@ import {
   Maximize2,
   Minimize2,
   X,
-  Microscope
+  Microscope,
+  Monitor,
+  ExternalLink,
+  Grid3x3,
+  LayoutList
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
 import { useState } from 'react';
@@ -39,6 +43,7 @@ export function Scans() {
   const { client } = useXnat();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [dicomHeaderDialog, setDicomHeaderDialog] = useState<XnatScan | null>(null);
   const [isHeaderDialogMaximized, setIsHeaderDialogMaximized] = useState(false);
   const [rawDicomHeaders, setRawDicomHeaders] = useState<Record<string, any> | null>(null);
@@ -174,23 +179,53 @@ export function Scans() {
   return (
     <div className="space-y-6">
       {/* Breadcrumb Navigation */}
-      <nav className="flex items-center space-x-2 text-sm text-gray-500">
-        <Link to="/projects" className="hover:text-gray-700">Projects</Link>
-        <span>/</span>
-        <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
-        <span>/</span>
-        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
-          {subjectData?.label || subject}
-        </Link>
-        <span>/</span>
-        <Link
-          to={`/experiments/${project}/${subject}/${experiment}`}
-          className="hover:text-gray-700"
-        >
-          {experimentData?.label || experiment}
-        </Link>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">Scans</span>
+      <nav className="flex items-center justify-between">
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <Link to="/projects" className="hover:text-gray-700">Projects</Link>
+          <span>/</span>
+          <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
+          <span>/</span>
+          <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+            {subjectData?.label || subject}
+          </Link>
+          <span>/</span>
+          <Link
+            to={`/experiments/${project}/${subject}/${experiment}`}
+            className="hover:text-gray-700"
+          >
+            {experimentData?.label || experiment}
+          </Link>
+          <span>/</span>
+          <span className="text-gray-900 font-medium">Scans</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {client && experimentData && (
+            <>
+              <button
+                onClick={() => window.open(
+                  `${client.getBaseUrl()}/app/template/XDATScreen_report_xnat_imageSessionData.vm/search_element/xnat:imageSessionData/search_field/xnat:imageSessionData.ID/search_value/${experimentData.id}/project/${project}`,
+                  '_blank',
+                  'width=1200,height=800,scrollbars=yes,resizable=yes'
+                )}
+                className="inline-flex items-center justify-center rounded-md border border-green-300 bg-green-50 p-2 text-green-700 hover:bg-green-100"
+                aria-label="OHIF Viewer"
+                title="OHIF Viewer"
+              >
+                <Monitor className="h-5 w-5" />
+              </button>
+              <a
+                href={`${client.getBaseUrl()}/app/action/DisplayItemAction/search_element/xnat:imageSessionData/search_field/xnat:imageSessionData.ID/search_value/${experimentData.id}/project/${project}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+                aria-label="View in XNAT"
+                title="View in XNAT"
+              >
+                <ExternalLink className="h-5 w-5" />
+              </a>
+            </>
+          )}
+        </div>
       </nav>
 
       {/* Back Button */}
@@ -241,7 +276,7 @@ export function Scans() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        
+
         <div className="relative">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
             <Filter className="h-5 w-5 text-gray-400" />
@@ -259,6 +294,36 @@ export function Scans() {
             ))}
           </select>
         </div>
+
+        {/* View Mode Toggle */}
+        <div className="flex rounded-md shadow-sm">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={clsx(
+              'relative inline-flex items-center rounded-l-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 focus:z-10',
+              viewMode === 'grid'
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-white text-gray-900 hover:bg-gray-50'
+            )}
+            aria-label="Grid view"
+          >
+            <Grid3x3 className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={clsx(
+              'relative -ml-px inline-flex items-center rounded-r-md px-3 py-2 text-sm font-semibold ring-1 ring-inset ring-gray-300 focus:z-10',
+              viewMode === 'table'
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-white text-gray-900 hover:bg-gray-50'
+            )}
+            aria-label="Table view"
+          >
+            <LayoutList className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Error Warning */}
@@ -270,44 +335,45 @@ export function Scans() {
         </div>
       )}
 
-      {/* Scans Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
-              <div className="flex items-center mb-4">
-                <div className="h-10 w-10 bg-gray-200 rounded-lg mr-3" />
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded mb-2" />
-                  <div className="h-3 bg-gray-200 rounded w-2/3" />
+      {/* Main Content */}
+      <div className="space-y-6">
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                  <div className="flex items-center mb-4">
+                    <div className="h-10 w-10 bg-gray-200 rounded-lg mr-3" />
+                    <div className="flex-1">
+                      <div className="h-4 bg-gray-200 rounded mb-2" />
+                      <div className="h-3 bg-gray-200 rounded w-2/3" />
+                    </div>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    <div className="h-3 bg-gray-200 rounded" />
+                    <div className="h-3 bg-gray-200 rounded w-3/4" />
+                  </div>
+                  <div className="flex justify-between">
+                    <div className="h-6 bg-gray-200 rounded w-16" />
+                    <div className="h-3 bg-gray-200 rounded w-20" />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2 mb-4">
-                <div className="h-3 bg-gray-200 rounded" />
-                <div className="h-3 bg-gray-200 rounded w-3/4" />
-              </div>
-              <div className="flex justify-between">
-                <div className="h-6 bg-gray-200 rounded w-16" />
-                <div className="h-3 bg-gray-200 rounded w-20" />
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : filteredScans.length === 0 ? (
-        <div className="text-center py-12">
-          <FileImage className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">
-            {searchTerm || selectedType ? 'No scans found' : 'No scans'}
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {searchTerm || selectedType
-              ? 'Try adjusting your search or filter criteria.'
-              : 'No scans found for this experiment.'
-            }
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          ) : filteredScans.length === 0 ? (
+            <div className="text-center py-12">
+              <FileImage className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                {searchTerm || selectedType ? 'No scans found' : 'No scans'}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {searchTerm || selectedType
+                  ? 'Try adjusting your search or filter criteria.'
+                  : 'No scans found for this experiment.'
+                }
+              </p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {filteredScans.map((scan: any) => {
             // Use experiment ID (not label) for snapshot URL
             const experimentId = experimentData?.id || experiment;
@@ -424,16 +490,120 @@ export function Scans() {
               </div>
             );
           })}
-        </div>
-      )}
+            </div>
+          ) : (
+            <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                      Scan
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Type
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Quality
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Frames
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Time
+                    </th>
+                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {filteredScans.map((scan: any) => {
+                    const experimentId = experimentData?.id || experiment;
 
-      {/* Summary Stats */}
-      {filteredScans.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm ring-1 ring-gray-900/5">
-          <h3 className="text-base font-semibold leading-6 text-gray-900 mb-4">
-            Scan Summary
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    return (
+                      <tr key={scan.id} className="hover:bg-gray-50">
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 flex-shrink-0">
+                              <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <ImageIcon className="h-5 w-5 text-blue-600" />
+                              </div>
+                            </div>
+                            <div className="ml-4">
+                              <div className="font-medium text-gray-900">
+                                {scan.series_description || `Scan ${scan.id}`}
+                              </div>
+                              <div className="text-gray-500 text-xs">{scan.id}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {scan.type || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          {scan.quality && (
+                            <span className={clsx(
+                              'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                              getQualityColor(scan.quality)
+                            )}>
+                              <Activity className="h-3 w-3 mr-1" />
+                              {scan.quality}
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {scan.frames || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {scan.startTime || '-'}
+                        </td>
+                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                          <div className="flex items-center justify-end gap-2">
+                            <button className="text-blue-600 hover:text-blue-900">
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDicomDialog(scan)}
+                              className="text-purple-600 hover:text-purple-900"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                            <Link
+                              to={`/experiments/${experimentId}/scans/${scan.id}/cornerstone`}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              <Microscope className="h-4 w-4" />
+                            </Link>
+                            <button className="text-green-600 hover:text-green-900">
+                              <Download className="h-4 w-4" />
+                            </button>
+                            <ProcessingMenu
+                              project={project!}
+                              xsiType="xnat:imageScanData"
+                              contextParams={{
+                                session: `/archive/experiments/${experimentId}`,
+                                scan: `/archive/experiments/${experimentId}/scans/${scan.id}`
+                              }}
+                              rootElement="xnat:imageScanData"
+                              label={scan.series_description || `Scan ${scan.id}`}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Summary Stats */}
+          {filteredScans.length > 0 && (
+            <div className="bg-white p-6 rounded-lg shadow-sm ring-1 ring-gray-900/5">
+              <h3 className="text-base font-semibold leading-6 text-gray-900 mb-4">
+                Scan Summary
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <div className="text-2xl font-semibold text-gray-900">
                 {filteredScans.length}
@@ -460,10 +630,11 @@ export function Scans() {
                 {filteredScans.reduce((total: number, s: any) => total + (parseInt(s.frames) || 0), 0)}
               </div>
               <div className="text-sm text-gray-500">Total Frames</div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+          )}
+      </div>
 
       {/* DICOM Header Dialog */}
       {dicomHeaderDialog && (

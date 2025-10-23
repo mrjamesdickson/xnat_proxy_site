@@ -11,7 +11,9 @@ import {
   Calendar,
   Activity,
   Eye,
-  FolderCog
+  FolderCog,
+  Upload,
+  ExternalLink
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
 import { ManageFilesDialog } from './ManageFilesDialog';
@@ -68,10 +70,68 @@ export function ProjectDetail() {
   return (
     <div className="space-y-6">
       {/* Breadcrumb Navigation */}
-      <nav className="flex items-center space-x-2 text-sm text-gray-500">
-        <Link to="/projects" className="hover:text-gray-700">Projects</Link>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">{project}</span>
+      <nav className="flex items-center justify-between">
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <Link to="/projects" className="hover:text-gray-700">Projects</Link>
+          <span>/</span>
+          <span className="text-gray-900 font-medium">{project}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/subjects?project=${project}`}
+            className="inline-flex items-center justify-center rounded-md border border-blue-300 bg-blue-50 p-2 text-blue-700 hover:bg-blue-100"
+            aria-label="View Subjects"
+            title="View Subjects"
+          >
+            <Users className="h-5 w-5" />
+          </Link>
+          <Link
+            to={`/experiments?project=${project}`}
+            className="inline-flex items-center justify-center rounded-md border border-green-300 bg-green-50 p-2 text-green-700 hover:bg-green-100"
+            aria-label="View Experiments"
+            title="View Experiments"
+          >
+            <FileImage className="h-5 w-5" />
+          </Link>
+          <button
+            type="button"
+            onClick={() => setIsManageFilesOpen(true)}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+            aria-label="Manage Files"
+            title="Manage Files"
+          >
+            <FolderCog className="h-5 w-5" />
+          </button>
+          <ProcessingMenu
+            project={project!}
+            xsiType="xnat:projectData"
+            contextParams={{
+              project: `/archive/projects/${project}`
+            }}
+            rootElement="xnat:projectData"
+            label={projectData?.name || project}
+          />
+          <Link
+            to={`/upload?project=${project}`}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+            aria-label="Upload Files"
+            title="Upload Files"
+          >
+            <Upload className="h-5 w-5" />
+          </Link>
+          {client && (
+            <a
+              href={`${client.getBaseUrl()}/app/action/DisplayItemAction/search_element/xnat:projectData/search_field/xnat:projectData.ID/search_value/${project}/project/${project}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+              aria-label="View in XNAT"
+              title="View in XNAT"
+            >
+              <ExternalLink className="h-5 w-5" />
+            </a>
+          )}
+        </div>
       </nav>
 
       {/* Back Button */}
@@ -87,38 +147,17 @@ export function ProjectDetail() {
 
       {/* Header */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="h-16 w-16 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-              <Folder className="h-8 w-8 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold leading-7 text-gray-900">
-                {projectData?.name || project}
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                Project ID: {project}
-              </p>
-            </div>
+        <div className="flex items-center">
+          <div className="h-16 w-16 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+            <Folder className="h-8 w-8 text-blue-600" />
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsManageFilesOpen(true)}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <FolderCog className="h-4 w-4" />
-              Manage Files
-            </button>
-            <ProcessingMenu
-              project={project!}
-              xsiType="xnat:projectData"
-              contextParams={{
-                project: `/archive/projects/${project}`
-              }}
-              rootElement="xnat:projectData"
-              label={projectData?.name || project}
-            />
+          <div>
+            <h1 className="text-2xl font-bold leading-7 text-gray-900">
+              {projectData?.name || project}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Project ID: {project}
+            </p>
           </div>
         </div>
       </div>
@@ -286,33 +325,6 @@ export function ProjectDetail() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Quick Actions</h3>
-            <div className="space-y-2">
-              <Link
-                to={`/subjects?project=${project}`}
-                className="block w-full text-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                View Subjects
-              </Link>
-              
-              <Link
-                to={`/experiments?project=${project}`}
-                className="block w-full text-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                View Experiments
-              </Link>
-
-              <Link
-                to="/upload"
-                className="block w-full text-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Upload Data
-              </Link>
-            </div>
-          </div>
-
           {/* Project Details */}
           <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-6">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Project Details</h3>

@@ -13,7 +13,12 @@ import {
   Settings,
   Eye,
   Monitor,
-  FolderCog
+  FolderCog,
+  ExternalLink,
+  Upload,
+  FileText,
+  Microscope,
+  Download
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
 import { ScanSnapshot } from './ScanSnapshot';
@@ -93,16 +98,75 @@ export function ExperimentDetail() {
     <>
       <div className="space-y-6">
       {/* Breadcrumb Navigation */}
-      <nav className="flex items-center space-x-2 text-sm text-gray-500">
-        <Link to="/projects" className="hover:text-gray-700">Projects</Link>
-        <span>/</span>
-        <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
-        <span>/</span>
-        <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
-          {subjectData?.label || subject}
-        </Link>
-        <span>/</span>
-        <span className="text-gray-900 font-medium">{experimentData?.label || experiment}</span>
+      <nav className="flex items-center justify-between">
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <Link to="/projects" className="hover:text-gray-700">Projects</Link>
+          <span>/</span>
+          <Link to={`/projects/${project}`} className="hover:text-gray-700">{project}</Link>
+          <span>/</span>
+          <Link to={`/subjects/${project}/${subject}`} className="hover:text-gray-700">
+            {subjectData?.label || subject}
+          </Link>
+          <span>/</span>
+          <span className="text-gray-900 font-medium">{experimentData?.label || experiment}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.open(getViewerUrl(), '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes')}
+            className="inline-flex items-center justify-center rounded-md border border-green-300 bg-green-50 p-2 text-green-700 hover:bg-green-100"
+            aria-label="OHIF Viewer (New Window)"
+            title="OHIF Viewer (New Window)"
+          >
+            <Monitor className="h-5 w-5" />
+          </button>
+          <Link
+            to={`/experiments/${project}/${subject}/${experiment}/scans`}
+            className="inline-flex items-center justify-center rounded-md border border-blue-300 bg-blue-50 p-2 text-blue-700 hover:bg-blue-100"
+            aria-label="View Scans"
+            title="View Scans"
+          >
+            <Eye className="h-5 w-5" />
+          </Link>
+          <button
+            type="button"
+            onClick={() => setIsManageFilesOpen(true)}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+            aria-label="Manage Files"
+            title="Manage Files"
+          >
+            <FolderCog className="h-5 w-5" />
+          </button>
+          <ProcessingMenu
+            project={project!}
+            xsiType="xnat:imageSessionData"
+            contextParams={{
+              session: `/archive/experiments/${experimentData?.id || experiment}`
+            }}
+            rootElement="xnat:imageSessionData"
+            label={experimentData?.label || experiment}
+          />
+          <Link
+            to={`/upload?project=${project}&subject=${subject}&experiment=${experiment}`}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+            aria-label="Upload Files"
+            title="Upload Files"
+          >
+            <Upload className="h-5 w-5" />
+          </Link>
+          {client && experimentData && (
+            <a
+              href={`${client.getBaseUrl()}/app/action/DisplayItemAction/search_element/xnat:imageSessionData/search_field/xnat:imageSessionData.ID/search_value/${experimentData.id}/project/${project}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white p-2 text-gray-700 hover:bg-gray-50"
+              aria-label="View in XNAT"
+              title="View in XNAT"
+            >
+              <ExternalLink className="h-5 w-5" />
+            </a>
+          )}
+        </div>
       </nav>
 
       {/* Back Button */}
@@ -128,23 +192,12 @@ export function ExperimentDetail() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            {experimentData?.modality && (
-              <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800">
-                <Camera className="h-4 w-4 mr-1" />
-                {experimentData.modality.toUpperCase()}
-              </span>
-            )}
-            <ProcessingMenu
-              project={project!}
-              xsiType="xnat:imageSessionData"
-              contextParams={{
-                session: `/archive/experiments/${experimentData?.id || experiment}`
-              }}
-              rootElement="xnat:imageSessionData"
-              label={experimentData?.label || experiment}
-            />
-          </div>
+          {experimentData?.modality && (
+            <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-blue-100 text-blue-800">
+              <Camera className="h-4 w-4 mr-1" />
+              {experimentData.modality.toUpperCase()}
+            </span>
+          )}
         </div>
       </div>
 
@@ -234,24 +287,60 @@ export function ExperimentDetail() {
 
                   return (
                     <div key={scan.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center min-w-0">
+                      <div className="flex items-center min-w-0 flex-1">
                         <ScanSnapshot
                           snapshotUrl={snapshotUrl}
                           alt={`Snapshot of ${scan.series_description || `Scan ${scan.id}`}`}
                           containerClassName="h-16 w-24 mr-3 flex-shrink-0"
                         />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-gray-900 truncate">
                             {scan.series_description || `Scan ${scan.id}`}
                           </div>
                           <div className="text-xs text-gray-500">
                             {scan.type} • {scan.quality || 'Unknown quality'}
                           </div>
+                          <div className="text-xs text-gray-400">{scan.frames ? `${scan.frames} frames` : ''} • {scan.id}</div>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-500 text-right">
-                        <div>{scan.frames ? `${scan.frames} frames` : ''}</div>
-                        <div className="text-[10px] text-gray-400">{scan.id}</div>
+                      <div className="flex items-center gap-2 ml-3">
+                        <Link
+                          to={`/experiments/${project}/${subject}/${experiment}/scans`}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="View in Scans"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          to={`/experiments/${project}/${subject}/${experiment}/scans`}
+                          className="text-purple-600 hover:text-purple-900"
+                          title="View DICOM Headers"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          to={`/experiments/${experimentId}/scans/${scan.id}/cornerstone`}
+                          className="text-indigo-600 hover:text-indigo-900"
+                          title="Cornerstone Viewer"
+                        >
+                          <Microscope className="h-4 w-4" />
+                        </Link>
+                        <button
+                          className="text-green-600 hover:text-green-900"
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        <ProcessingMenu
+                          project={project!}
+                          xsiType="xnat:imageScanData"
+                          contextParams={{
+                            session: `/archive/experiments/${experimentId}`,
+                            scan: `/archive/experiments/${experimentId}/scans/${scan.id}`
+                          }}
+                          rootElement="xnat:imageScanData"
+                          label={scan.series_description || `Scan ${scan.id}`}
+                        />
                       </div>
                     </div>
                   );
@@ -332,49 +421,6 @@ export function ExperimentDetail() {
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg p-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Actions</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => window.open(getViewerUrl(), '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes')}
-                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
-              >
-                <Monitor className="h-4 w-4 mr-2" />
-                OHIF Viewer (New Window)
-              </button>
-              
-              <button
-                onClick={() => window.open(getViewerUrl(), 'ohif-viewer-tab')}
-                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                <Monitor className="h-4 w-4 mr-2" />
-                OHIF Viewer (New Tab)
-              </button>
-              
-              <button
-                onClick={() => setIsManageFilesOpen(true)}
-                className="flex items-center justify-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                <FolderCog className="h-4 w-4 mr-2" />
-                Manage Files
-              </button>
-              
-              <Link
-                to={`/experiments/${project}/${subject}/${experiment}/scans`}
-                className="block w-full text-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                View Scans
-              </Link>
-              
-              <Link
-                to={`/upload?project=${project}&subject=${subject}&experiment=${experiment}`}
-                className="block w-full text-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Upload Files
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </div>
