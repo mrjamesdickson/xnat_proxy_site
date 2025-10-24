@@ -1,27 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Rocket, AlertCircle, CheckCircle, Loader2, Search } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
-import type { XnatCommand, XnatCommandWrapper } from '../services/xnat-api';
+import type { XnatCommand, XnatCommandWrapper, XnatLaunchUiInput } from '../services/xnat-api';
 import clsx from 'clsx';
 
 interface BatchProcessingModalProps {
   selectedExperiments: Set<string>;
+  selectedExperimentData: any[]; // Full experiment objects with URI
   projectId: string;
+  preselectedCommand?: any;
+  preselectedWrapper?: any;
   onClose: () => void;
   onSuccess?: () => void;
 }
 
 export function BatchProcessingModal({
   selectedExperiments,
+  selectedExperimentData,
   projectId,
+  preselectedCommand,
+  preselectedWrapper,
   onClose,
   onSuccess,
 }: BatchProcessingModalProps) {
   const { client } = useXnat();
-  const [selectedCommand, setSelectedCommand] = useState<XnatCommand | null>(null);
-  const [selectedWrapper, setSelectedWrapper] = useState<XnatCommandWrapper | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCommand, setSelectedCommand] = useState<XnatCommand | null>(preselectedCommand || null);
+  const [selectedWrapper, setSelectedWrapper] = useState<XnatCommandWrapper | null>(preselectedWrapper || null);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchResult, setLaunchResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -32,55 +38,149 @@ export function BatchProcessingModal({
     enabled: !!client,
   });
 
-  // Filter commands to show only experiment-level wrappers
-  const experimentCommands = commands?.filter(command => {
-    const wrappers = command.xnat || command['xnat-command-wrappers'] || command.xnatCommandWrappers || [];
-    return wrappers.some(wrapper => {
-      const contexts = wrapper.contexts || wrapper.context || [];
-      const contextArray = Array.isArray(contexts) ? contexts : [contexts];
-      return contextArray.some(ctx =>
-        typeof ctx === 'string' && (
-          ctx.includes('imageSessionData') ||
-          ctx.includes('mrSessionData') ||
-          ctx.includes('Session') ||
-          ctx.includes('Experiment')
-        )
-      );
-    });
+  // Fetch bulk launch UI for selected wrapper
+  const launchUiQuery = useQuery({
+    queryKey: ['batch-launch-ui', selectedWrapper?.id, projectId],
+    enabled: !!client && !!selectedWrapper && selectedExperimentData.length > 0,
+    queryFn: async () => {
+      if (!selectedWrapper || !client) return null;
+
+      // Get first experiment to use as sample
+      const firstExperiment = selectedExperimentData.find(exp => {
+        const expId = exp.id || exp.ID || exp.label;
+        return selectedExperiments.has(expId);
+      });
+
+      if (!firstExperiment) return null;
+
+      // Build archive URI for the sample experiment
+      const experimentId = firstExperiment.id || firstExperiment.ID;
+      const sampleTarget = `/archive/experiments/${experimentId}`;
+
+      // Call bulk launch endpoint with sample target
+      const url = `/xapi/projects/${projectId}/wrappers/${selectedWrapper.id}/bulklaunch`;
+      const params = new URLSearchParams({
+        format: 'json',
+        sampleTarget,
+        rootElement: 'session'
+      });
+
+      const response = await client.getHttpClient().get(`${url}?${params.toString()}`);
+      return response.data;
+    },
   });
 
-  // Filter by search term
-  const filteredCommands = experimentCommands?.filter(command => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    const name = command.name?.toLowerCase() || '';
-    const description = command.description?.toLowerCase() || '';
-    return name.includes(search) || description.includes(search);
-  });
+  const launchUi = launchUiQuery.data;
 
-  const handleSelectCommand = (command: XnatCommand) => {
-    setSelectedCommand(command);
-    setSelectedWrapper(null);
-    setLaunchResult(null);
-
-    // Auto-select wrapper if there's only one experiment-level wrapper
-    const wrappers = command.xnat || command['xnat-command-wrappers'] || command.xnatCommandWrappers || [];
-    const experimentWrappers = wrappers.filter(wrapper => {
-      const contexts = wrapper.contexts || wrapper.context || [];
-      const contextArray = Array.isArray(contexts) ? contexts : [contexts];
-      return contextArray.some(ctx =>
-        typeof ctx === 'string' && (
-          ctx.includes('imageSessionData') ||
-          ctx.includes('mrSessionData') ||
-          ctx.includes('Session') ||
-          ctx.includes('Experiment')
-        )
-      );
-    });
-
-    if (experimentWrappers.length === 1) {
-      setSelectedWrapper(experimentWrappers[0]);
+  // Add debug logging
+  useEffect(() => {
+    if (launchUi) {
+      console.log('📦 Bulk Launch UI data:', launchUi);
+      console.log('📦 Input config:', launchUi['input-config'] || launchUi.inputs);
+      console.log('📦 Input values:', launchUi['input-values']);
     }
+  }, [launchUi]);
+
+  // Merge input-config with input-values
+  const inputs = useMemo(() => {
+    const inputConfig = launchUi?.['input-config'] ?? launchUi?.inputs ?? [];
+    const inputValues = launchUi?.['input-values'] ?? [];
+
+    const valuesMap = new Map();
+    inputValues.forEach((inputValue) => {
+      if (inputValue.values && inputValue.values.length > 0) {
+        valuesMap.set(inputValue.name, inputValue.values);
+      }
+    });
+
+    const merged = inputConfig.map((input: XnatLaunchUiInput) => ({
+      ...input,
+      values: valuesMap.get(input.name) || input.values || []
+    }));
+
+    console.log('📦 Merged inputs:', merged);
+    return merged;
+  }, [launchUi]);
+
+  // Set default form values when launch UI loads
+  useEffect(() => {
+    if (launchUi) {
+      const defaults: Record<string, string> = {};
+
+      const inputValues = launchUi['input-values'] ?? [];
+      inputValues.forEach((inputValue) => {
+        // Skip session input - we build it separately from selected experiments
+        if (inputValue.name === 'session') return;
+
+        if (inputValue.values && inputValue.values.length > 0) {
+          const firstValue = inputValue.values[0].value;
+          if (firstValue !== undefined && firstValue !== null) {
+            defaults[inputValue.name] = String(firstValue);
+          }
+        }
+      });
+
+      const inputConfig = launchUi['input-config'] ?? launchUi.inputs ?? [];
+      inputConfig.forEach((input: XnatLaunchUiInput) => {
+        // Skip session input - we build it separately from selected experiments
+        if (input.name === 'session') return;
+
+        const defaultValue = input['default-value'] ?? input.defaultValue;
+        if (defaultValue !== undefined && defaultValue !== null && !(input.name in defaults)) {
+          defaults[input.name] = String(defaultValue);
+        }
+      });
+
+      console.log('📝 Batch form defaults set:', defaults);
+      setFormValues(defaults);
+    }
+  }, [launchUi]);
+
+  // Get all experiment-level wrappers with their parent command info
+  const experimentWrappers = useMemo(() => {
+    if (!commands) return [];
+
+    const result: Array<{
+      command: XnatCommand;
+      wrapper: XnatCommandWrapper;
+      displayName: string;
+    }> = [];
+
+    commands.forEach(command => {
+      const wrappers = command.xnat || command['xnat-command-wrappers'] || command.xnatCommandWrappers || [];
+      wrappers.forEach(wrapper => {
+        const contexts = wrapper.contexts || wrapper.context || [];
+        const contextArray = Array.isArray(contexts) ? contexts : [contexts];
+        const isExperimentLevel = contextArray.some(ctx =>
+          typeof ctx === 'string' && (
+            ctx.includes('imageSessionData') ||
+            ctx.includes('mrSessionData') ||
+            ctx.includes('Session') ||
+            ctx.includes('Experiment')
+          )
+        );
+
+        if (isExperimentLevel) {
+          const wrapperName = wrapper.name || wrapper['wrapper-name'] || 'Default';
+          const displayName = `${command.name}${wrapperName !== 'Default' ? ` (${wrapperName})` : ''}`;
+          result.push({ command, wrapper, displayName });
+        }
+      });
+    });
+
+    return result;
+  }, [commands]);
+
+  const handleProcessClick = (command: XnatCommand, wrapper: XnatCommandWrapper) => {
+    setSelectedCommand(command);
+    setSelectedWrapper(wrapper);
+    setShowConfigDialog(true);
+    setLaunchResult(null);
+  };
+
+  const handleCloseConfigDialog = () => {
+    setShowConfigDialog(false);
+    setLaunchResult(null);
   };
 
   const handleLaunch = async () => {
@@ -91,23 +191,50 @@ export function BatchProcessingModal({
 
     try {
       const wrapperId = selectedWrapper.id || 0;
-      const experimentIds = Array.from(selectedExperiments);
 
-      // Use bulk launch API - params should include root-element-values
-      const params: Record<string, any> = {
-        'root-element-values': experimentIds,
+      // Extract experiment URIs from the full experiment data
+      const experimentUris = selectedExperimentData
+        .filter(exp => {
+          const expId = exp.id || exp.ID || exp.label;
+          return selectedExperiments.has(expId);
+        })
+        .map(exp => {
+          // Build archive URI using experiment ID (not label)
+          const experimentId = exp.id || exp.ID;
+          return `/archive/experiments/${experimentId}`;
+        })
+        .filter(Boolean);
+
+      console.log('🚀 Batch launching:', { experimentUris, formValues });
+
+      // Build the session JSON string
+      const sessionJson = JSON.stringify(experimentUris);
+      console.log('📤 Session JSON string:', sessionJson);
+      console.log('📤 Session JSON string type:', typeof sessionJson);
+      console.log('📤 Session JSON string length:', sessionJson.length);
+
+      // Build POST body - session should be a JSON-stringified array as a string value
+      // The whole payload is then sent as JSON, so session becomes a quoted JSON string
+      const payload = {
+        session: sessionJson,
+        ...Object.fromEntries(
+          Object.entries(formValues).map(([k, v]) => [k, String(v)])
+        )
       };
 
-      await client.bulkLaunch(
-        wrapperId,
-        'Session', // root element type for experiments
-        params as Record<string, string>,
-        projectId
-      );
+      console.log('📤 Full payload object:', payload);
+      console.log('📤 Full payload as JSON:', JSON.stringify(payload, null, 2));
+
+      const url = `/xapi/projects/${projectId}/wrappers/${wrapperId}/root/session/bulklaunch`;
+      console.log('📤 URL:', url);
+
+      const response = await client.getHttpClient().post(url, payload, {
+        headers: { 'Content-Type': 'application/json' }
+      });
 
       setLaunchResult({
         success: true,
-        message: `Successfully launched ${selectedCommand.name} on ${experimentIds.length} experiment${experimentIds.length !== 1 ? 's' : ''}`,
+        message: `Successfully launched ${selectedCommand.name} on ${experimentUris.length} experiment${experimentUris.length !== 1 ? 's' : ''}`,
       });
 
       // Call success callback after a short delay
@@ -126,181 +253,609 @@ export function BatchProcessingModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-      <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
-        {/* Background overlay */}
-        <div
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-          aria-hidden="true"
-          onClick={onClose}
-        ></div>
+  // If command/wrapper are preselected, show only config dialog
+  if (preselectedCommand && preselectedWrapper) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+          {/* Background overlay */}
+          <div
+            className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
+            onClick={onClose}
+          ></div>
 
-        {/* Modal panel */}
-        <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
-          <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-semibold leading-6 text-gray-900" id="modal-title">
-                  Batch Process Experiments
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''} selected
-                </p>
+          {/* Dialog panel */}
+          <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+            <div className="bg-white px-4 pb-4 pt-5 sm:p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {selectedCommand?.name}
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedExperiments.size} item{selectedExperiments.size !== 1 ? 's' : ''} selected to run in bulk.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-md bg-white text-gray-400 hover:text-gray-500"
+                >
+                  <X className="h-6 w-6" />
+                </button>
               </div>
+
+              {/* Experiment List */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Session
+                </label>
+                <textarea
+                  readOnly
+                  value={selectedExperimentData
+                    .filter(exp => {
+                      const expId = exp.id || exp.ID || exp.label;
+                      return selectedExperiments.has(expId);
+                    })
+                    .map(exp => exp.label || exp.ID || exp.id)
+                    .join('\n')}
+                  className="block w-full h-32 rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 bg-gray-50 sm:text-sm sm:leading-6 resize-none"
+                />
+              </div>
+
+              {/* Derived/Informational Fields - Sample from first experiment */}
+              {selectedExperimentData.length > 0 && (() => {
+                const firstExperiment = selectedExperimentData.find(exp => {
+                  const expId = exp.id || exp.ID || exp.label;
+                  return selectedExperiments.has(expId);
+                });
+
+                if (!firstExperiment) return null;
+
+                const sampleFields = [
+                  {
+                    label: 'Session-Id',
+                    description: '[Derived from session > id]',
+                    value: firstExperiment.id || firstExperiment.ID,
+                    sample: `Value for first session as a sample: "${firstExperiment.id || firstExperiment.ID}"`
+                  },
+                  {
+                    label: 'Session-Label',
+                    description: '[Derived from session > label]',
+                    value: firstExperiment.label,
+                    sample: `Value for first session as a sample: "${firstExperiment.label}"`
+                  },
+                  {
+                    label: 'Subject-Label',
+                    description: '[Derived from session > Subject > label]',
+                    value: firstExperiment.subject_label || firstExperiment['subject_label'] || firstExperiment.label,
+                    sample: `Value for first session as a sample: "${firstExperiment.subject_label || firstExperiment['subject_label'] || firstExperiment.label}"`
+                  },
+                  {
+                    label: 'Project-Id',
+                    description: '[Derived from session > Project > id]',
+                    value: firstExperiment.project || projectId,
+                    sample: `Value for first session as a sample: "${firstExperiment.project || projectId}"`
+                  },
+                  {
+                    label: 'Session-Dir',
+                    description: '[Derived from session > directory]',
+                    value: (() => {
+                      const project = firstExperiment.project || projectId;
+                      const subjectId = firstExperiment.subject_ID || firstExperiment.subject_id || firstExperiment.subject_label || '';
+                      const sessionLabel = firstExperiment.label;
+                      return `/data/xnat/archive/${project}/arc001/${sessionLabel}/`;
+                    })(),
+                    sample: (() => {
+                      const project = firstExperiment.project || projectId;
+                      const subjectId = firstExperiment.subject_ID || firstExperiment.subject_id || firstExperiment.subject_label || '';
+                      const sessionLabel = firstExperiment.label;
+                      return `Value for first session as a sample: "/data/xnat/archive/${project}/arc001/${sessionLabel}/"`;
+                    })()
+                  }
+                ];
+
+                return (
+                  <div className="mb-4 space-y-3">
+                    {sampleFields.map(field => (
+                      <div key={field.label}>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {field.label}
+                        </label>
+                        <p className="text-xs text-gray-500 mb-1">{field.description}</p>
+                        <p className="text-xs text-gray-500 mb-1">{field.sample}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Loading */}
+              {launchUiQuery.isLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                  <span className="ml-2 text-sm text-gray-500">Loading configuration...</span>
+                </div>
+              )}
+
+              {/* Derived Fields (non-user-settable) */}
+              {inputs && inputs.filter(i => !(i['user-settable'] ?? i.userSettable ?? true)).length > 0 && (
+                <div className="mb-4 space-y-3">
+                  {inputs
+                    .filter(i => !(i['user-settable'] ?? i.userSettable ?? true))
+                    .map((input: XnatLaunchUiInput) => {
+                      const inputLabel = input.label || input.name;
+                      const inputDescription = input.description;
+                      const derivedValue = formValues[input.name] || '';
+
+                      return (
+                        <div key={input.name}>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {inputLabel}
+                          </label>
+                          {inputDescription && (
+                            <p className="text-xs text-gray-500 mb-1">{inputDescription}</p>
+                          )}
+                          <input
+                            type="text"
+                            readOnly
+                            value={derivedValue}
+                            className="block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 bg-gray-50 sm:text-sm sm:leading-6"
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
+              {/* Form Inputs (user-settable) */}
+              {inputs && inputs.filter(i => {
+                const isUserSettable = i['user-settable'] ?? i.userSettable ?? true;
+                const isSessionInput = i.name === 'session';
+                return isUserSettable && !isSessionInput;
+              }).length > 0 && (
+                <div className="mb-4">
+                  <div className="space-y-4">
+                    {inputs
+                      .filter(i => {
+                        const isUserSettable = i['user-settable'] ?? i.userSettable ?? true;
+                        const isSessionInput = i.name === 'session';
+                        return isUserSettable && !isSessionInput;
+                      })
+                      .map((input: XnatLaunchUiInput) => {
+                        const inputLabel = input.label || input.name;
+                        const inputDescription = input.description;
+                        const inputType = input.type || 'string';
+                        const isRequired = input.required ?? false;
+                        const values = input.values || [];
+
+                        return (
+                          <div key={input.name}>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              {inputLabel}
+                              {isRequired && <span className="text-red-500 ml-1">*</span>}
+                            </label>
+                            {inputDescription && (
+                              <p className="text-xs text-gray-500 mb-2">{inputDescription}</p>
+                            )}
+
+                          {values.length > 0 ? (
+                            <select
+                              value={formValues[input.name] || ''}
+                              onChange={(e) =>
+                                setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                              }
+                              required={isRequired}
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                            >
+                              {!isRequired && <option value="">-- Select --</option>}
+                              {values.map((v) => {
+                                const optionValue = String(v.value ?? v);
+                                const optionLabel = v.label || optionValue;
+                                return (
+                                  <option key={optionValue} value={optionValue}>
+                                    {optionLabel}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          ) : inputType === 'boolean' ? (
+                            <div className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={formValues[input.name] === 'true'}
+                                onChange={(e) =>
+                                  setFormValues((prev) => ({
+                                    ...prev,
+                                    [input.name]: e.target.checked ? 'true' : 'false',
+                                  }))
+                                }
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                              />
+                            </div>
+                          ) : inputType === 'number' ? (
+                            <input
+                              type="number"
+                              value={formValues[input.name] || ''}
+                              onChange={(e) =>
+                                setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                              }
+                              required={isRequired}
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={formValues[input.name] || ''}
+                              onChange={(e) =>
+                                setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                              }
+                              required={isRequired}
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Launch Result */}
+              {launchResult && (
+                <div className={clsx(
+                  'rounded-md p-4 mb-4',
+                  launchResult.success ? 'bg-green-50' : 'bg-red-50'
+                )}>
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      {launchResult.success ? (
+                        <CheckCircle className="h-5 w-5 text-green-400" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5 text-red-400" />
+                      )}
+                    </div>
+                    <div className="ml-3">
+                      <p className={clsx(
+                        'text-sm',
+                        launchResult.success ? 'text-green-800' : 'text-red-800'
+                      )}>
+                        {launchResult.message}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 px-4 py-3 flex flex-row-reverse gap-2">
+              <button
+                type="button"
+                onClick={handleLaunch}
+                disabled={isLaunching}
+                className={clsx(
+                  'inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm',
+                  isLaunching
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-500'
+                )}
+              >
+                {isLaunching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Launching...
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="h-4 w-4" />
+                    Launch
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none"
+                disabled={isLaunching}
+                className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
               >
-                <X className="h-6 w-6" />
+                Cancel
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            {/* Search */}
-            <div className="mb-4">
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Search className="h-5 w-5 text-gray-400" />
+  // Otherwise show full command list modal
+  return (
+    <>
+      {/* Main Command List Modal */}
+      <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+          {/* Background overlay */}
+          <div
+            className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+            aria-hidden="true"
+            onClick={onClose}
+          ></div>
+
+          {/* Modal panel */}
+          <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
+            <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold leading-6 text-gray-900" id="modal-title">
+                    Available Commands
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''} selected
+                  </p>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Search commands..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="block w-full rounded-md border-0 py-2 pl-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                />
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none"
+                >
+                  <X className="h-6 w-6" />
+                </button>
               </div>
-            </div>
 
-            {/* Commands List */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Processing Command
-              </label>
-
+              {/* Command List */}
               {commandsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
                 </div>
-              ) : filteredCommands && filteredCommands.length > 0 ? (
-                <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-md">
-                  {filteredCommands.map((command) => {
-                    const commandId = command.id || command['command-id'] || 0;
-                    const isSelected = selectedCommand?.id === commandId;
-                    const keyValue = String(commandId);
-
+              ) : experimentWrappers && experimentWrappers.length > 0 ? (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {experimentWrappers.map((item) => {
+                    const wrapperName = item.wrapper.name || item.wrapper['wrapper-name'] || '';
                     return (
-                      <button
-                        key={keyValue}
-                        type="button"
-                        onClick={() => handleSelectCommand(command)}
-                        className={clsx(
-                          'w-full text-left px-4 py-3 border-b border-gray-200 hover:bg-gray-50 transition-colors',
-                          isSelected && 'bg-blue-50 hover:bg-blue-100'
-                        )}
+                      <div
+                        key={item.wrapper.id}
+                        className="flex items-start justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900">{command.name}</div>
-                            {command.description && (
-                              <div className="mt-1 text-xs text-gray-500 line-clamp-2">{command.description}</div>
-                            )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Rocket className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                            <h4 className="text-sm font-semibold text-gray-900">{item.command.name}</h4>
                           </div>
-                          {isSelected && (
-                            <CheckCircle className="h-5 w-5 text-blue-600 ml-2 flex-shrink-0" />
+                          {wrapperName && (
+                            <p className="mt-1 text-xs text-gray-600">{wrapperName}</p>
+                          )}
+                          {item.command.description && (
+                            <p className="mt-1 text-xs text-gray-500 line-clamp-2">
+                              {item.command.description}
+                            </p>
                           )}
                         </div>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleProcessClick(item.command, item.wrapper)}
+                          className="ml-4 inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 flex-shrink-0"
+                        >
+                          <Rocket className="h-3 w-3" />
+                          Process
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="text-center py-8 text-sm text-gray-500">
-                  No experiment-level commands found
+                <div className="text-center py-12 text-sm text-gray-500">
+                  <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                  <p>No experiment-level commands found</p>
                 </div>
               )}
             </div>
 
-            {/* Selected Command Summary */}
-            {selectedCommand && (
-              <div className="bg-gray-50 rounded-md p-4 mb-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-2">Selected Command</h4>
-                <div className="space-y-1 text-sm text-gray-600">
-                  <div><span className="font-medium">Name:</span> {selectedCommand.name}</div>
-                  {selectedCommand.description && (
-                    <div><span className="font-medium">Description:</span> {selectedCommand.description}</div>
-                  )}
-                  {selectedWrapper && (
-                    <div><span className="font-medium">Wrapper:</span> {selectedWrapper.name || 'Default'}</div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Launch Result */}
-            {launchResult && (
-              <div className={clsx(
-                'rounded-md p-4 mb-4',
-                launchResult.success ? 'bg-green-50' : 'bg-red-50'
-              )}>
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    {launchResult.success ? (
-                      <CheckCircle className="h-5 w-5 text-green-400" />
-                    ) : (
-                      <AlertCircle className="h-5 w-5 text-red-400" />
-                    )}
-                  </div>
-                  <div className="ml-3">
-                    <p className={clsx(
-                      'text-sm',
-                      launchResult.success ? 'text-green-800' : 'text-red-800'
-                    )}>
-                      {launchResult.message}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 gap-2">
-            <button
-              type="button"
-              onClick={handleLaunch}
-              disabled={!selectedCommand || !selectedWrapper || isLaunching}
-              className={clsx(
-                'inline-flex w-full justify-center items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:w-auto',
-                (!selectedCommand || !selectedWrapper || isLaunching)
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-500'
-              )}
-            >
-              {isLaunching ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Launching...
-                </>
-              ) : (
-                <>
-                  <Rocket className="h-4 w-4" />
-                  Launch Processing
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLaunching}
-              className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            {/* Footer */}
+            <div className="bg-gray-50 px-4 py-3 flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Configuration Dialog */}
+      {showConfigDialog && selectedCommand && selectedWrapper && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+            {/* Background overlay */}
+            <div
+              className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
+              onClick={handleCloseConfigDialog}
+            ></div>
+
+            {/* Dialog panel */}
+            <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-4 pb-4 pt-5 sm:p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {selectedCommand.name}
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Configure parameters for {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseConfigDialog}
+                    className="rounded-md bg-white text-gray-400 hover:text-gray-500"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                {/* Loading */}
+                {launchUiQuery.isLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+                    <span className="ml-2 text-sm text-gray-500">Loading configuration...</span>
+                  </div>
+                )}
+
+                {/* Form Inputs */}
+                {inputs && inputs.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">Configuration Parameters</h4>
+                    <div className="space-y-4">
+                      {inputs.map((input: XnatLaunchUiInput) => {
+                        const inputLabel = input.label || input.name;
+                        const inputDescription = input.description;
+                        const inputType = input.type || 'string';
+                        const isRequired = input.required ?? false;
+                        const values = input.values || [];
+
+                        return (
+                          <div key={input.name}>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              {inputLabel}
+                              {isRequired && <span className="text-red-500 ml-1">*</span>}
+                            </label>
+                            {inputDescription && (
+                              <p className="text-xs text-gray-500 mb-2">{inputDescription}</p>
+                            )}
+
+                            {values.length > 0 ? (
+                              /* Dropdown for inputs with predefined values */
+                              <select
+                                value={formValues[input.name] || ''}
+                                onChange={(e) =>
+                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                                }
+                                required={isRequired}
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                              >
+                                {!isRequired && <option value="">-- Select --</option>}
+                                {values.map((v) => {
+                                  const optionValue = String(v.value ?? v);
+                                  const optionLabel = v.label || optionValue;
+                                  return (
+                                    <option key={optionValue} value={optionValue}>
+                                      {optionLabel}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            ) : inputType === 'boolean' ? (
+                              /* Checkbox for boolean inputs */
+                              <div className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={formValues[input.name] === 'true'}
+                                  onChange={(e) =>
+                                    setFormValues((prev) => ({
+                                      ...prev,
+                                      [input.name]: e.target.checked ? 'true' : 'false',
+                                    }))
+                                  }
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                                />
+                              </div>
+                            ) : inputType === 'number' ? (
+                              /* Number input */
+                              <input
+                                type="number"
+                                value={formValues[input.name] || ''}
+                                onChange={(e) =>
+                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                                }
+                                required={isRequired}
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                              />
+                            ) : (
+                              /* Text input (default) */
+                              <input
+                                type="text"
+                                value={formValues[input.name] || ''}
+                                onChange={(e) =>
+                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
+                                }
+                                required={isRequired}
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Launch Result */}
+                {launchResult && (
+                  <div className={clsx(
+                    'rounded-md p-4 mb-4',
+                    launchResult.success ? 'bg-green-50' : 'bg-red-50'
+                  )}>
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        {launchResult.success ? (
+                          <CheckCircle className="h-5 w-5 text-green-400" />
+                        ) : (
+                          <AlertCircle className="h-5 w-5 text-red-400" />
+                        )}
+                      </div>
+                      <div className="ml-3">
+                        <p className={clsx(
+                          'text-sm',
+                          launchResult.success ? 'text-green-800' : 'text-red-800'
+                        )}>
+                          {launchResult.message}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="bg-gray-50 px-4 py-3 flex flex-row-reverse gap-2">
+                <button
+                  type="button"
+                  onClick={handleLaunch}
+                  disabled={isLaunching}
+                  className={clsx(
+                    'inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm',
+                    isLaunching
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-500'
+                  )}
+                >
+                  {isLaunching ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Launching...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="h-4 w-4" />
+                      Launch
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseConfigDialog}
+                  disabled={isLaunching}
+                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
 import {
@@ -44,11 +44,19 @@ export function Experiments() {
   const [requestComments, setRequestComments] = useState('');
   const [selectedExperiments, setSelectedExperiments] = useState<Set<string>>(new Set());
   const [showBatchProcessModal, setShowBatchProcessModal] = useState(false);
+  const [selectedCommandForBatch, setSelectedCommandForBatch] = useState<{command: any; wrapper: any} | null>(null);
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
     queryFn: () => client?.getProjects() || [],
     enabled: !!client,
+  });
+
+  // Fetch commands for batch processing dropdown
+  const { data: commands } = useQuery({
+    queryKey: ['commands'],
+    queryFn: () => client?.getCommands() || [],
+    enabled: !!client && selectedExperiments.size > 0,
   });
 
   // Fetch subjects to create a mapping for experiments that don't have subject_id
@@ -164,6 +172,41 @@ export function Experiments() {
   }) || [];
   
   console.log('Filtered experiments:', filteredExperiments);
+
+  // Get experiment-level wrappers for batch processing dropdown
+  const experimentWrappers = useMemo(() => {
+    if (!commands) return [];
+
+    const result: Array<{
+      command: any;
+      wrapper: any;
+      displayName: string;
+    }> = [];
+
+    commands.forEach(command => {
+      const wrappers = command.xnat || command['xnat-command-wrappers'] || command.xnatCommandWrappers || [];
+      wrappers.forEach((wrapper: any) => {
+        const contexts = wrapper.contexts || wrapper.context || [];
+        const contextArray = Array.isArray(contexts) ? contexts : [contexts];
+        const isExperimentLevel = contextArray.some((ctx: any) =>
+          typeof ctx === 'string' && (
+            ctx.includes('imageSessionData') ||
+            ctx.includes('mrSessionData') ||
+            ctx.includes('Session') ||
+            ctx.includes('Experiment')
+          )
+        );
+
+        if (isExperimentLevel) {
+          const wrapperName = wrapper.name || wrapper['wrapper-name'] || 'Default';
+          const displayName = `${command.name}${wrapperName !== 'Default' ? ` (${wrapperName})` : ''}`;
+          result.push({ command, wrapper, displayName });
+        }
+      });
+    });
+
+    return result;
+  }, [commands]);
 
   // Pagination calculations
   const totalItems = filteredExperiments.length;
@@ -416,14 +459,29 @@ export function Experiments() {
                 Clear selection
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowBatchProcessModal(true)}
-              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-            >
-              <Rocket className="h-4 w-4" />
-              Process Selected
-            </button>
+            <div className="relative">
+              <label htmlFor="batch-container-select" className="sr-only">Select container to process</label>
+              <select
+                id="batch-container-select"
+                value=""
+                onChange={(e) => {
+                  const wrapperId = Number(e.target.value);
+                  const selected = experimentWrappers.find(w => w.wrapper.id === wrapperId);
+                  if (selected) {
+                    setSelectedCommandForBatch(selected);
+                    setShowBatchProcessModal(true);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 border-0"
+              >
+                <option value="" className="bg-white text-gray-900">Process Selected...</option>
+                {experimentWrappers.map((item) => (
+                  <option key={item.wrapper.id} value={item.wrapper.id} className="bg-white text-gray-900">
+                    {item.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       )}
@@ -971,14 +1029,21 @@ export function Experiments() {
       )}
 
       {/* Batch Processing Modal */}
-      {showBatchProcessModal && (
+      {showBatchProcessModal && selectedCommandForBatch && (
         <BatchProcessingModal
           selectedExperiments={selectedExperiments}
+          selectedExperimentData={filteredExperiments}
           projectId={selectedProject || routeProject || ''}
-          onClose={() => setShowBatchProcessModal(false)}
+          preselectedCommand={selectedCommandForBatch.command}
+          preselectedWrapper={selectedCommandForBatch.wrapper}
+          onClose={() => {
+            setShowBatchProcessModal(false);
+            setSelectedCommandForBatch(null);
+          }}
           onSuccess={() => {
             setSelectedExperiments(new Set());
             setShowBatchProcessModal(false);
+            setSelectedCommandForBatch(null);
           }}
         />
       )}
