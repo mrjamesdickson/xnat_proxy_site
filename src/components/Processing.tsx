@@ -917,15 +917,17 @@ export function Processing() {
                       Clear selection
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleKillSelectedClick}
-                    disabled={Array.from(selectedContainers).some(id => killingContainers.has(id))}
-                    className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <StopCircle className="h-4 w-4" />
-                    Kill Selected
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleKillSelectedClick}
+                      disabled={Array.from(selectedContainers).some(id => killingContainers.has(id))}
+                      className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <StopCircle className="h-4 w-4" />
+                      Mark as Failed
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1413,14 +1415,14 @@ export function Processing() {
                   </div>
                   <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
                     <h3 className="text-lg font-semibold leading-6 text-gray-900">
-                      Kill {selectedContainers.size} Container{selectedContainers.size !== 1 ? 's' : ''}?
+                      Mark {selectedContainers.size} Container{selectedContainers.size !== 1 ? 's' : ''} as Failed?
                     </h3>
                     <div className="mt-2">
                       <p className="text-sm text-gray-500">
-                        Are you sure you want to kill {selectedContainers.size} selected container{selectedContainers.size !== 1 ? 's' : ''}? This action cannot be undone.
+                        Are you sure you want to mark {selectedContainers.size} selected container{selectedContainers.size !== 1 ? 's' : ''} as failed? This will kill the container{selectedContainers.size !== 1 ? 's' : ''} and cannot be undone.
                       </p>
                       <div className="mt-4 max-h-48 overflow-y-auto rounded-md bg-gray-50 p-3">
-                        <p className="text-xs font-medium text-gray-700 mb-2">Containers to be killed:</p>
+                        <p className="text-xs font-medium text-gray-700 mb-2">Containers to mark as failed:</p>
                         <ul className="space-y-1">
                           {Array.from(selectedContainers).map(containerId => {
                             const workflow = paginatedWorkflows.find(w => getWorkflowContainerId(w) === containerId);
@@ -1447,7 +1449,7 @@ export function Processing() {
                   onClick={handleConfirmKill}
                   className="inline-flex w-full justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 sm:w-auto"
                 >
-                  Yes, Kill {selectedContainers.size} Container{selectedContainers.size !== 1 ? 's' : ''}
+                  Yes, Mark as Failed
                 </button>
                 <button
                   type="button"
@@ -1479,12 +1481,12 @@ export function Processing() {
 
                 {/* Title */}
                 <h3 className="text-2xl font-semibold text-gray-900 mb-4">
-                  Bulk Kill Containers
+                  Marking Containers as Failed
                 </h3>
 
                 {/* Progress text */}
                 <p className="text-blue-600 text-base mb-2">
-                  Killing {Array.from(killProgress.values()).filter(s => s === 'success' || s === 'failed').length} of {killProgress.size} containers
+                  Processing {Array.from(killProgress.values()).filter(s => s === 'success' || s === 'failed').length} of {killProgress.size} containers
                 </p>
 
                 {/* Current item */}
