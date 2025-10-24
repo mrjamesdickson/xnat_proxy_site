@@ -291,7 +291,7 @@ export function AnalyticsDashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" hide />
                   <YAxis allowDecimals={false} />
-                  <Tooltip />
+                  <Tooltip animationDuration={150} />
                   <Legend />
                   <Bar dataKey="subjects" stackId="a" fill="#3B82F6" />
                   <Bar dataKey="experiments" stackId="a" fill="#8B5CF6" />
@@ -316,7 +316,7 @@ export function AnalyticsDashboard() {
                       <Cell key={`cell-${entry.name}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip animationDuration={150} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -343,7 +343,7 @@ export function AnalyticsDashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis allowDecimals={false} />
-                  <Tooltip />
+                  <Tooltip animationDuration={150} />
                   <Area type="monotone" dataKey="experiments" stroke="#3B82F6" fillOpacity={1} fill="url(#colorExperiments)" />
                 </AreaChart>
               </ResponsiveContainer>
