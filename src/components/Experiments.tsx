@@ -16,11 +16,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid3x3,
-  List
+  List,
+  CheckSquare,
+  Square,
+  Rocket
 } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
+import { BatchProcessingModal } from './BatchProcessingModal';
 
 export function Experiments() {
   const { client, config } = useXnat();
@@ -38,6 +42,8 @@ export function Experiments() {
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
   const [requestComments, setRequestComments] = useState('');
+  const [selectedExperiments, setSelectedExperiments] = useState<Set<string>>(new Set());
+  const [showBatchProcessModal, setShowBatchProcessModal] = useState(false);
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -190,6 +196,31 @@ export function Experiments() {
   const handleItemsPerPageChange = (newItemsPerPage: number) => {
     setItemsPerPage(newItemsPerPage);
     setCurrentPage(1);
+  };
+
+  const handleToggleExperiment = (experimentId: string) => {
+    setSelectedExperiments(prev => {
+      const next = new Set(prev);
+      if (next.has(experimentId)) {
+        next.delete(experimentId);
+      } else {
+        next.add(experimentId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAll = () => {
+    if (selectedExperiments.size === paginatedExperiments.length) {
+      setSelectedExperiments(new Set());
+    } else {
+      const allIds = paginatedExperiments.map(exp => getExperimentId(exp));
+      setSelectedExperiments(new Set(allIds));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedExperiments(new Set());
   };
 
   const handleRequestAccess = async () => {
@@ -369,6 +400,34 @@ export function Experiments() {
         </div>
       </div>
 
+      {/* Selection Toolbar */}
+      {selectedExperiments.size > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-blue-900">
+                {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                Clear selection
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowBatchProcessModal(true)}
+              className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              <Rocket className="h-4 w-4" />
+              Process Selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Experiments Grid */}
       {!selectedProject && !routeProject ? (
         <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
@@ -457,6 +516,19 @@ export function Experiments() {
           <table className="min-w-full divide-y divide-gray-300">
             <thead className="bg-gray-50">
               <tr>
+                <th className="relative w-12 px-6 sm:w-16 sm:px-8">
+                  <button
+                    type="button"
+                    onClick={handleToggleAll}
+                    className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                  >
+                    {selectedExperiments.size === paginatedExperiments.length && paginatedExperiments.length > 0 ? (
+                      <CheckSquare className="h-4 w-4" />
+                    ) : (
+                      <Square className="h-4 w-4" />
+                    )}
+                  </button>
+                </th>
                 <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">Label</th>
                 <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Project</th>
                 <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Subject</th>
@@ -475,6 +547,19 @@ export function Experiments() {
 
                 return (
                   <tr key={experimentId} className="hover:bg-gray-50">
+                    <td className="relative w-12 px-6 sm:w-16 sm:px-8">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleExperiment(experimentId)}
+                        className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                      >
+                        {selectedExperiments.has(experimentId) ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+                    </td>
                     <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium">
                       <Link
                         to={`/experiments/${projectId}/${subjectId}/${experiment.label || experimentId}`}
@@ -883,6 +968,19 @@ export function Experiments() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Batch Processing Modal */}
+      {showBatchProcessModal && (
+        <BatchProcessingModal
+          selectedExperiments={selectedExperiments}
+          projectId={selectedProject || routeProject || ''}
+          onClose={() => setShowBatchProcessModal(false)}
+          onSuccess={() => {
+            setSelectedExperiments(new Set());
+            setShowBatchProcessModal(false);
+          }}
+        />
       )}
     </div>
   );
