@@ -1,11 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
 import { useState } from 'react';
-import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2 } from 'lucide-react';
+import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2, Calendar } from 'lucide-react';
 import type { XnatPrearchiveSession, XnatPrearchiveScan } from '../services/xnat-api';
 // @ts-ignore - dcmjs doesn't have TypeScript definitions
 import * as dcmjs from 'dcmjs';
 import { dicomAnonymizer, DEFAULT_ANONYMIZATION_SCRIPT } from '../services/dicom-anonymizer';
+import { DateFilterModal } from './DateFilterModal';
+import clsx from 'clsx';
 
 type SortField = 'status' | 'project' | 'subject' | 'name' | 'scan_date' | 'uploaded';
 type SortDirection = 'asc' | 'desc';
@@ -81,6 +83,8 @@ export function Prearchive() {
   const [filterSession, setFilterSession] = useState<string>('');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [showDateFilterModal, setShowDateFilterModal] = useState(false);
+  const [dateFilter, setDateFilter] = useState<{ start: string; end: string } | null>(null);
   const [sortField, setSortField] = useState<SortField>('uploaded');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [showColumnFilter, setShowColumnFilter] = useState(false);
@@ -1038,11 +1042,38 @@ export function Prearchive() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="flex items-end">
-            <div className="text-sm text-gray-600">
-              Showing {filteredSessions.length} of {sessions.length} sessions
-            </div>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDateFilterModal(true)}
+              className={clsx(
+                'px-4 py-2 rounded-lg border flex items-center gap-2',
+                filterDateFrom || filterDateTo
+                  ? 'bg-blue-100 text-blue-700 border-blue-300'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+              title="Filter by Date Range"
+            >
+              <Calendar className="h-4 w-4" />
+              Date Filter
+            </button>
+            {(filterDateFrom || filterDateTo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterDateFrom('');
+                  setFilterDateTo('');
+                  setDateFilter(null);
+                }}
+                className="px-3 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+              >
+                Clear
+              </button>
+            )}
           </div>
+        </div>
+        <div className="text-sm text-gray-600">
+          Showing {filteredSessions.length} of {sessions.length} sessions
         </div>
 
         {/* Bulk Actions */}
@@ -2033,6 +2064,41 @@ export function Prearchive() {
           </div>
         </div>
       )}
+
+      {/* Date Filter Modal */}
+      <DateFilterModal
+        experiments={(() => {
+          const experiments = (sessions || []).map(session => ({
+            id: session.name,
+            label: session.name,
+            project: session.project,
+            date: session.scan_date,
+          }));
+
+          // Debug: Log first few scan dates
+          if (experiments.length > 0) {
+            console.log('Prearchive - Sample scan_date values:',
+              experiments.slice(0, 5).map(e => e.date)
+            );
+          }
+
+          return experiments as any;
+        })()}
+        isOpen={showDateFilterModal}
+        onClose={() => setShowDateFilterModal(false)}
+        onApplyFilter={(filter) => {
+          if (filter) {
+            setFilterDateFrom(filter.start);
+            setFilterDateTo(filter.end);
+            setDateFilter(filter);
+          } else {
+            setFilterDateFrom('');
+            setFilterDateTo('');
+            setDateFilter(null);
+          }
+        }}
+        currentFilter={dateFilter}
+      />
     </div>
   );
 }

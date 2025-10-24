@@ -25,18 +25,46 @@ const parseExperimentDateStatic = (experiment: XnatExperiment): Date | null => {
   if (!experiment.date) return null;
 
   try {
-    // Handle YYYYMMDD format
-    if (/^\d{8}$/.test(experiment.date)) {
-      const year = experiment.date.substring(0, 4);
-      const month = experiment.date.substring(4, 6);
-      const day = experiment.date.substring(6, 8);
-      return new Date(`${year}-${month}-${day}`);
+    const dateStr = experiment.date.trim();
+
+    // Handle YYYYMMDD format (8 digits)
+    if (/^\d{8}$/.test(dateStr)) {
+      const year = dateStr.substring(0, 4);
+      const month = dateStr.substring(4, 6);
+      const day = dateStr.substring(6, 8);
+      return new Date(`${year}-${month}-${day}T00:00:00`);
     }
 
-    // Handle ISO format or other parseable formats
-    const parsed = new Date(experiment.date);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
+    // Handle YYYY-MM-DD format
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return new Date(`${dateStr}T00:00:00`);
+    }
+
+    // Handle M/D/YYYY or MM/DD/YYYY format (US date format)
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+      const [month, day, year] = dateStr.split('/');
+      const paddedMonth = month.padStart(2, '0');
+      const paddedDay = day.padStart(2, '0');
+      return new Date(`${year}-${paddedMonth}-${paddedDay}T00:00:00`);
+    }
+
+    // Handle ISO format with time component
+    if (/^\d{4}-\d{2}-\d{2}T/.test(dateStr)) {
+      const parsed = new Date(dateStr);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    // Handle other parseable formats (like "May 1, 2003", etc.)
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+
+    // If all else fails, log the format and return null
+    console.warn('DateFilterModal - Unable to parse date:', dateStr);
+    return null;
+  } catch (error) {
+    console.warn('DateFilterModal - Error parsing date:', experiment.date, error);
     return null;
   }
 };
@@ -56,12 +84,12 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
 
     const daySpan = (dates[dates.length - 1].getTime() - dates[0].getTime()) / (1000 * 60 * 60 * 24);
 
-    if (daySpan > 365) return 'month';
+    if (daySpan > 730) return 'month'; // More than 2 years, use months
     if (daySpan > 90) return 'week';
     return 'day';
   };
 
-  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>(getOptimalGrouping);
+  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>(() => getOptimalGrouping());
   const [rangeSelection, setRangeSelection] = useState<{ start: number; end: number } | null>(null);
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'move' | 'create' | null>(null);
   const [dragStart, setDragStart] = useState<number>(0);
@@ -70,23 +98,7 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
 
   // Helper to parse experiment date
   const parseExperimentDate = (experiment: XnatExperiment): Date | null => {
-    if (!experiment.date) return null;
-
-    try {
-      // Handle YYYYMMDD format
-      if (/^\d{8}$/.test(experiment.date)) {
-        const year = experiment.date.substring(0, 4);
-        const month = experiment.date.substring(4, 6);
-        const day = experiment.date.substring(6, 8);
-        return new Date(`${year}-${month}-${day}`);
-      }
-
-      // Handle ISO format or other parseable formats
-      const parsed = new Date(experiment.date);
-      return isNaN(parsed.getTime()) ? null : parsed;
-    } catch {
-      return null;
-    }
+    return parseExperimentDateStatic(experiment);
   };
 
   // Format date to YYYY-MM-DD
@@ -111,6 +123,31 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
   const allDateBuckets = useMemo((): DateBucket[] => {
     const buckets = new Map<string, XnatExperiment[]>();
 
+    // Parse all dates first to debug
+    const parsedDates: Array<{ exp: XnatExperiment; date: Date | null }> = experiments.map(exp => ({
+      exp,
+      date: parseExperimentDate(exp)
+    }));
+
+    const validDates = parsedDates.filter(({ date }) => date !== null);
+    console.log('DateFilterModal - Total experiments:', experiments.length);
+    console.log('DateFilterModal - Valid parsed dates:', validDates.length);
+
+    if (validDates.length === 0) {
+      return [];
+    }
+
+    const dates = validDates.map(({ date }) => date!).sort((a, b) => a.getTime() - b.getTime());
+    const firstDate = dates[0];
+    const lastDate = dates[dates.length - 1];
+
+    console.log('DateFilterModal - Date range:', {
+      first: firstDate.toISOString().split('T')[0],
+      last: lastDate.toISOString().split('T')[0],
+      span: `${Math.round((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24))} days`
+    });
+
+    // First, populate buckets with actual data
     experiments.forEach(exp => {
       const expDate = parseExperimentDate(exp);
       if (!expDate) return;
@@ -134,9 +171,47 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
       buckets.get(key)!.push(exp);
     });
 
+    // Now fill in gaps between first and last date
+    const allKeys: string[] = [];
+    const current = new Date(firstDate);
+
+    while (current <= lastDate) {
+      let key: string;
+      switch (groupBy) {
+        case 'week':
+          key = getWeekKey(current);
+          break;
+        case 'month':
+          key = getMonthKey(current);
+          break;
+        default:
+          key = formatDateKey(current);
+      }
+
+      if (!allKeys.includes(key)) {
+        allKeys.push(key);
+        if (!buckets.has(key)) {
+          buckets.set(key, []); // Empty bucket for gap
+        }
+      }
+
+      // Increment date based on grouping
+      if (groupBy === 'month') {
+        current.setMonth(current.getMonth() + 1);
+      } else if (groupBy === 'week') {
+        current.setDate(current.getDate() + 7);
+      } else {
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
     // Convert to array and sort
     const sorted = Array.from(buckets.entries())
       .sort((a, b) => a[0].localeCompare(b[0]));
+
+    console.log('DateFilterModal - Total buckets created (with gaps):', sorted.length);
+    console.log('DateFilterModal - First 5 buckets:', sorted.slice(0, 5).map(([date, exps]) => ({ date, count: exps.length })));
+    console.log('DateFilterModal - Last 5 buckets:', sorted.slice(-5).map(([date, exps]) => ({ date, count: exps.length })));
 
     // Calculate positions for rendering
     const chartWidth = 100; // percentage
@@ -146,14 +221,27 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
       let displayLabel = date;
       if (groupBy === 'week') {
         const [year, week] = date.split('-W');
-        displayLabel = `W${week}`;
+        displayLabel = `W${week} '${year.substring(2)}`;
       } else if (groupBy === 'month') {
         const [year, month] = date.split('-');
         const monthDate = new Date(parseInt(year), parseInt(month) - 1);
         displayLabel = monthDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
       } else {
+        // For day grouping, include year when data spans multiple years
         const d = new Date(date);
-        displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (sorted.length > 0) {
+          const firstDate = new Date(sorted[0][0]);
+          const lastDate = new Date(sorted[sorted.length - 1][0]);
+          const spansMultipleYears = firstDate.getFullYear() !== lastDate.getFullYear();
+
+          if (spansMultipleYears) {
+            displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+          } else {
+            displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          }
+        } else {
+          displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
       }
 
       return {
@@ -185,9 +273,6 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
 
       return overlaps;
     });
-
-    console.log('Range selection:', rangeSelection);
-    console.log('Filtered buckets:', filtered.length, 'of', allDateBuckets.length);
 
     return filtered;
   }, [allDateBuckets, rangeSelection]);
@@ -436,6 +521,17 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
           {/* Quick Range Buttons */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">Quick select:</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (allDateBuckets.length > 0) {
+                  setRangeSelection({ start: 0, end: 100 });
+                }
+              }}
+              className="px-3 py-1 text-sm rounded-md bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium"
+            >
+              All
+            </button>
             {[7, 30, 90, 180, 365].map(days => (
               <button
                 key={days}
@@ -469,7 +565,7 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
           <div className="text-sm text-gray-500">
             {rangeSelection
               ? `${filteredBuckets.length} of ${allDateBuckets.length} ${groupBy === 'day' ? 'days' : groupBy === 'week' ? 'weeks' : 'months'} selected`
-              : `${allDateBuckets.length} ${groupBy === 'day' ? 'days' : groupBy === 'week' ? 'weeks' : 'months'} with data`
+              : `${allDateBuckets.length} ${groupBy === 'day' ? 'days' : groupBy === 'week' ? 'weeks' : 'months'} (${allDateBuckets.filter(b => b.count > 0).length} with data)`
             }
           </div>
         </div>
@@ -490,7 +586,8 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
             >
               {/* Bars */}
               {allDateBuckets.map((bucket) => {
-                const height = (bucket.count / maxCount) * 100;
+                const isEmpty = bucket.count === 0;
+                const height = isEmpty ? 0 : (bucket.count / maxCount) * 100;
                 const bucketCenter = bucket.x + bucket.width / 2;
                 const isInRange = !rangeSelection || (
                   bucketCenter >= rangeSelection.start &&
@@ -504,16 +601,18 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
                     style={{
                       left: `${bucket.x}%`,
                       width: `${bucket.width}%`,
-                      height: `${height}%`,
+                      height: isEmpty ? '100%' : `${height}%`,
                       padding: '0 1px',
                     }}
                   >
                     <div
                       className={clsx(
                         'h-full rounded-t transition-colors',
-                        isInRange ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300'
+                        isEmpty
+                          ? 'bg-gray-100 border-b border-gray-200'
+                          : isInRange ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300'
                       )}
-                      title={`${bucket.displayLabel}: ${bucket.count} experiment${bucket.count !== 1 ? 's' : ''}`}
+                      title={isEmpty ? `${bucket.displayLabel}: No data` : `${bucket.displayLabel}: ${bucket.count} experiment${bucket.count !== 1 ? 's' : ''}`}
                     />
                   </div>
                 );
