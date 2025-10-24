@@ -24,7 +24,7 @@ export function Subjects() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || '');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(20);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
@@ -55,9 +55,10 @@ export function Subjects() {
 
   // Pagination calculations
   const totalItems = filteredSubjects.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
+  const effectiveItemsPerPage = itemsPerPage === 'all' ? totalItems : itemsPerPage;
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * effectiveItemsPerPage;
+  const endIndex = itemsPerPage === 'all' ? totalItems : startIndex + effectiveItemsPerPage;
   const paginatedSubjects = filteredSubjects.slice(startIndex, endIndex);
 
   // Reset to first page when filters change
@@ -78,7 +79,7 @@ export function Subjects() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+  const handleItemsPerPageChange = (newItemsPerPage: number | 'all') => {
     setItemsPerPage(newItemsPerPage);
     setCurrentPage(1);
   };
@@ -510,7 +511,7 @@ export function Subjects() {
       )}
 
       {/* Pagination Controls */}
-      {totalPages > 1 && (
+      {totalItems > 0 && (
         <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6 rounded-lg shadow-sm">
           <div className="flex justify-between flex-1 sm:hidden">
             <button
@@ -533,13 +534,17 @@ export function Subjects() {
               <span className="text-sm text-gray-700">Show</span>
               <select
                 value={itemsPerPage}
-                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                  handleItemsPerPageChange(value);
+                }}
                 className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
+                <option value="all">All</option>
               </select>
               <span className="text-sm text-gray-700">per page</span>
             </div>
