@@ -18,8 +18,7 @@ import {
   Grid3x3,
   List,
   CheckSquare,
-  Square,
-  Rocket
+  Square
 } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';

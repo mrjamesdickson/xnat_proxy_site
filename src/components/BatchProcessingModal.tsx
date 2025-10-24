@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, Rocket, AlertCircle, CheckCircle, Loader2, Search } from 'lucide-react';
+import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
 import type { XnatCommand, XnatCommandWrapper, XnatLaunchUiInput } from '../services/xnat-api';
 import clsx from 'clsx';
@@ -25,18 +25,12 @@ export function BatchProcessingModal({
   onSuccess,
 }: BatchProcessingModalProps) {
   const { client } = useXnat();
-  const [selectedCommand, setSelectedCommand] = useState<XnatCommand | null>(preselectedCommand || null);
-  const [selectedWrapper, setSelectedWrapper] = useState<XnatCommandWrapper | null>(preselectedWrapper || null);
+  const [selectedCommand] = useState<XnatCommand | null>(preselectedCommand || null);
+  const [selectedWrapper] = useState<XnatCommandWrapper | null>(preselectedWrapper || null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [isLaunching, setIsLaunching] = useState(false);
   const [launchResult, setLaunchResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Fetch available commands
-  const { data: commands, isLoading: commandsLoading } = useQuery({
-    queryKey: ['commands'],
-    queryFn: () => client?.getCommands() || [],
-    enabled: !!client,
-  });
 
   // Fetch bulk launch UI for selected wrapper
   const launchUiQuery = useQuery({
@@ -87,7 +81,7 @@ export function BatchProcessingModal({
     const inputValues = launchUi?.['input-values'] ?? [];
 
     const valuesMap = new Map();
-    inputValues.forEach((inputValue) => {
+    inputValues.forEach((inputValue: any) => {
       if (inputValue.values && inputValue.values.length > 0) {
         valuesMap.set(inputValue.name, inputValue.values);
       }
@@ -108,7 +102,7 @@ export function BatchProcessingModal({
       const defaults: Record<string, string> = {};
 
       const inputValues = launchUi['input-values'] ?? [];
-      inputValues.forEach((inputValue) => {
+      inputValues.forEach((inputValue: any) => {
         // Skip session input - we build it separately from selected experiments
         if (inputValue.name === 'session') return;
 
@@ -136,52 +130,6 @@ export function BatchProcessingModal({
     }
   }, [launchUi]);
 
-  // Get all experiment-level wrappers with their parent command info
-  const experimentWrappers = useMemo(() => {
-    if (!commands) return [];
-
-    const result: Array<{
-      command: XnatCommand;
-      wrapper: XnatCommandWrapper;
-      displayName: string;
-    }> = [];
-
-    commands.forEach(command => {
-      const wrappers = command.xnat || command['xnat-command-wrappers'] || command.xnatCommandWrappers || [];
-      wrappers.forEach(wrapper => {
-        const contexts = wrapper.contexts || wrapper.context || [];
-        const contextArray = Array.isArray(contexts) ? contexts : [contexts];
-        const isExperimentLevel = contextArray.some(ctx =>
-          typeof ctx === 'string' && (
-            ctx.includes('imageSessionData') ||
-            ctx.includes('mrSessionData') ||
-            ctx.includes('Session') ||
-            ctx.includes('Experiment')
-          )
-        );
-
-        if (isExperimentLevel) {
-          const wrapperName = wrapper.name || wrapper['wrapper-name'] || 'Default';
-          const displayName = `${command.name}${wrapperName !== 'Default' ? ` (${wrapperName})` : ''}`;
-          result.push({ command, wrapper, displayName });
-        }
-      });
-    });
-
-    return result;
-  }, [commands]);
-
-  const handleProcessClick = (command: XnatCommand, wrapper: XnatCommandWrapper) => {
-    setSelectedCommand(command);
-    setSelectedWrapper(wrapper);
-    setShowConfigDialog(true);
-    setLaunchResult(null);
-  };
-
-  const handleCloseConfigDialog = () => {
-    setShowConfigDialog(false);
-    setLaunchResult(null);
-  };
 
   const handleLaunch = async () => {
     if (!client || !selectedCommand || !selectedWrapper) return;
@@ -228,7 +176,7 @@ export function BatchProcessingModal({
       const url = `/xapi/projects/${projectId}/wrappers/${wrapperId}/root/session/bulklaunch`;
       console.log('📤 URL:', url);
 
-      const response = await client.getHttpClient().post(url, payload, {
+      await client.getHttpClient().post(url, payload, {
         headers: { 'Content-Type': 'application/json' }
       });
 
@@ -342,13 +290,11 @@ export function BatchProcessingModal({
                     description: '[Derived from session > directory]',
                     value: (() => {
                       const project = firstExperiment.project || projectId;
-                      const subjectId = firstExperiment.subject_ID || firstExperiment.subject_id || firstExperiment.subject_label || '';
                       const sessionLabel = firstExperiment.label;
                       return `/data/xnat/archive/${project}/arc001/${sessionLabel}/`;
                     })(),
                     sample: (() => {
                       const project = firstExperiment.project || projectId;
-                      const subjectId = firstExperiment.subject_ID || firstExperiment.subject_id || firstExperiment.subject_label || '';
                       const sessionLabel = firstExperiment.label;
                       return `Value for first session as a sample: "/data/xnat/archive/${project}/arc001/${sessionLabel}/"`;
                     })()
@@ -379,10 +325,10 @@ export function BatchProcessingModal({
               )}
 
               {/* Derived Fields (non-user-settable) */}
-              {inputs && inputs.filter(i => !(i['user-settable'] ?? i.userSettable ?? true)).length > 0 && (
+              {inputs && inputs.filter((i: any) => !(i['user-settable'] ?? i.userSettable ?? true)).length > 0 && (
                 <div className="mb-4 space-y-3">
                   {inputs
-                    .filter(i => !(i['user-settable'] ?? i.userSettable ?? true))
+                    .filter((i: any) => !(i['user-settable'] ?? i.userSettable ?? true))
                     .map((input: XnatLaunchUiInput) => {
                       const inputLabel = input.label || input.name;
                       const inputDescription = input.description;
@@ -409,7 +355,7 @@ export function BatchProcessingModal({
               )}
 
               {/* Form Inputs (user-settable) */}
-              {inputs && inputs.filter(i => {
+              {inputs && inputs.filter((i: any) => {
                 const isUserSettable = i['user-settable'] ?? i.userSettable ?? true;
                 const isSessionInput = i.name === 'session';
                 return isUserSettable && !isSessionInput;
@@ -417,7 +363,7 @@ export function BatchProcessingModal({
                 <div className="mb-4">
                   <div className="space-y-4">
                     {inputs
-                      .filter(i => {
+                      .filter((i: any) => {
                         const isUserSettable = i['user-settable'] ?? i.userSettable ?? true;
                         const isSessionInput = i.name === 'session';
                         return isUserSettable && !isSessionInput;
@@ -547,10 +493,7 @@ export function BatchProcessingModal({
                     Launching...
                   </>
                 ) : (
-                  <>
-                    <Rocket className="h-4 w-4" />
-                    Launch
-                  </>
+                  'Launch'
                 )}
               </button>
               <button
@@ -568,294 +511,31 @@ export function BatchProcessingModal({
     );
   }
 
-  // Otherwise show full command list modal
+  // If no command/wrapper preselected, show error
   return (
-    <>
-      {/* Main Command List Modal */}
-      <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
-          {/* Background overlay */}
-          <div
-            className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-            aria-hidden="true"
-            onClick={onClose}
-          ></div>
-
-          {/* Modal panel */}
-          <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
-            <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold leading-6 text-gray-900" id="modal-title">
-                    Available Commands
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''} selected
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-
-              {/* Command List */}
-              {commandsLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                </div>
-              ) : experimentWrappers && experimentWrappers.length > 0 ? (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {experimentWrappers.map((item) => {
-                    const wrapperName = item.wrapper.name || item.wrapper['wrapper-name'] || '';
-                    return (
-                      <div
-                        key={item.wrapper.id}
-                        className="flex items-start justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <Rocket className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                            <h4 className="text-sm font-semibold text-gray-900">{item.command.name}</h4>
-                          </div>
-                          {wrapperName && (
-                            <p className="mt-1 text-xs text-gray-600">{wrapperName}</p>
-                          )}
-                          {item.command.description && (
-                            <p className="mt-1 text-xs text-gray-500 line-clamp-2">
-                              {item.command.description}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleProcessClick(item.command, item.wrapper)}
-                          className="ml-4 inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 flex-shrink-0"
-                        >
-                          <Rocket className="h-3 w-3" />
-                          Process
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-sm text-gray-500">
-                  <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-                  <p>No experiment-level commands found</p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="bg-gray-50 px-4 py-3 flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+        <div
+          className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
+          onClick={onClose}
+        ></div>
+        <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-md sm:align-middle p-6">
+          <div className="flex items-center gap-3 text-red-600 mb-4">
+            <AlertCircle className="h-6 w-6" />
+            <h3 className="text-lg font-semibold">Error</h3>
           </div>
+          <p className="text-sm text-gray-600 mb-4">
+            No container command was selected. Please select a container from the dropdown to continue.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-md bg-gray-600 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700"
+          >
+            Close
+          </button>
         </div>
       </div>
-
-      {/* Configuration Dialog */}
-      {showConfigDialog && selectedCommand && selectedWrapper && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
-          <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
-            {/* Background overlay */}
-            <div
-              className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
-              onClick={handleCloseConfigDialog}
-            ></div>
-
-            {/* Dialog panel */}
-            <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
-              <div className="bg-white px-4 pb-4 pt-5 sm:p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {selectedCommand.name}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Configure parameters for {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCloseConfigDialog}
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500"
-                  >
-                    <X className="h-6 w-6" />
-                  </button>
-                </div>
-
-                {/* Loading */}
-                {launchUiQuery.isLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-                    <span className="ml-2 text-sm text-gray-500">Loading configuration...</span>
-                  </div>
-                )}
-
-                {/* Form Inputs */}
-                {inputs && inputs.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-3">Configuration Parameters</h4>
-                    <div className="space-y-4">
-                      {inputs.map((input: XnatLaunchUiInput) => {
-                        const inputLabel = input.label || input.name;
-                        const inputDescription = input.description;
-                        const inputType = input.type || 'string';
-                        const isRequired = input.required ?? false;
-                        const values = input.values || [];
-
-                        return (
-                          <div key={input.name}>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              {inputLabel}
-                              {isRequired && <span className="text-red-500 ml-1">*</span>}
-                            </label>
-                            {inputDescription && (
-                              <p className="text-xs text-gray-500 mb-2">{inputDescription}</p>
-                            )}
-
-                            {values.length > 0 ? (
-                              /* Dropdown for inputs with predefined values */
-                              <select
-                                value={formValues[input.name] || ''}
-                                onChange={(e) =>
-                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
-                                }
-                                required={isRequired}
-                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                              >
-                                {!isRequired && <option value="">-- Select --</option>}
-                                {values.map((v) => {
-                                  const optionValue = String(v.value ?? v);
-                                  const optionLabel = v.label || optionValue;
-                                  return (
-                                    <option key={optionValue} value={optionValue}>
-                                      {optionLabel}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-                            ) : inputType === 'boolean' ? (
-                              /* Checkbox for boolean inputs */
-                              <div className="flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={formValues[input.name] === 'true'}
-                                  onChange={(e) =>
-                                    setFormValues((prev) => ({
-                                      ...prev,
-                                      [input.name]: e.target.checked ? 'true' : 'false',
-                                    }))
-                                  }
-                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
-                                />
-                              </div>
-                            ) : inputType === 'number' ? (
-                              /* Number input */
-                              <input
-                                type="number"
-                                value={formValues[input.name] || ''}
-                                onChange={(e) =>
-                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
-                                }
-                                required={isRequired}
-                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                              />
-                            ) : (
-                              /* Text input (default) */
-                              <input
-                                type="text"
-                                value={formValues[input.name] || ''}
-                                onChange={(e) =>
-                                  setFormValues((prev) => ({ ...prev, [input.name]: e.target.value }))
-                                }
-                                required={isRequired}
-                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Launch Result */}
-                {launchResult && (
-                  <div className={clsx(
-                    'rounded-md p-4 mb-4',
-                    launchResult.success ? 'bg-green-50' : 'bg-red-50'
-                  )}>
-                    <div className="flex">
-                      <div className="flex-shrink-0">
-                        {launchResult.success ? (
-                          <CheckCircle className="h-5 w-5 text-green-400" />
-                        ) : (
-                          <AlertCircle className="h-5 w-5 text-red-400" />
-                        )}
-                      </div>
-                      <div className="ml-3">
-                        <p className={clsx(
-                          'text-sm',
-                          launchResult.success ? 'text-green-800' : 'text-red-800'
-                        )}>
-                          {launchResult.message}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="bg-gray-50 px-4 py-3 flex flex-row-reverse gap-2">
-                <button
-                  type="button"
-                  onClick={handleLaunch}
-                  disabled={isLaunching}
-                  className={clsx(
-                    'inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white shadow-sm',
-                    isLaunching
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-500'
-                  )}
-                >
-                  {isLaunching ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Launching...
-                    </>
-                  ) : (
-                    <>
-                      <Rocket className="h-4 w-4" />
-                      Launch
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseConfigDialog}
-                  disabled={isLaunching}
-                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
