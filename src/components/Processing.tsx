@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Braces,
   CheckCircle,
+  CheckSquare,
   Clock,
   Cpu,
   FileText,
@@ -239,6 +240,11 @@ export function Processing() {
   const [selectedStderrContainerId, setSelectedStderrContainerId] = useState<string | null>(null);
   const [selectedRawJsonContainerId, setSelectedRawJsonContainerId] = useState<string | null>(null);
   const [killingContainers, setKillingContainers] = useState<Set<string>>(new Set());
+  const [selectedContainers, setSelectedContainers] = useState<Set<string>>(new Set());
+  const [killResults, setKillResults] = useState<{ succeeded: number; failed: number; total: number; error?: string } | null>(null);
+  const [killProgress, setKillProgress] = useState<Map<string, 'pending' | 'killing' | 'success' | 'failed'>>(new Map());
+  const [showKillModal, setShowKillModal] = useState(false);
+  const [showKillConfirmation, setShowKillConfirmation] = useState(false);
 
   const isAdminUser = useMemo(() => {
     const roles = currentUser?.authorization?.roles ?? currentUser?.roles ?? [];
@@ -443,6 +449,102 @@ export function Processing() {
       setKillingContainers((prev) => {
         const next = new Set(prev);
         next.delete(containerId);
+        return next;
+      });
+    }
+  };
+
+  const handleToggleContainer = (containerId: string) => {
+    setSelectedContainers((prev) => {
+      const next = new Set(prev);
+      if (next.has(containerId)) {
+        next.delete(containerId);
+      } else {
+        next.add(containerId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAllContainers = () => {
+    if (selectedContainers.size === paginatedWorkflows.length) {
+      setSelectedContainers(new Set());
+    } else {
+      const allIds = paginatedWorkflows
+        .map(w => getWorkflowContainerId(w))
+        .filter(Boolean) as string[];
+      setSelectedContainers(new Set(allIds));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedContainers(new Set());
+  };
+
+  const handleKillSelectedClick = () => {
+    setShowKillConfirmation(true);
+  };
+
+  const handleConfirmKill = async () => {
+    if (!client || selectedContainers.size === 0) return;
+
+    setShowKillConfirmation(false);
+    const containerIds = Array.from(selectedContainers);
+
+    // Initialize progress map with all containers as pending
+    const initialProgress = new Map<string, 'pending' | 'killing' | 'success' | 'failed'>();
+    containerIds.forEach(id => initialProgress.set(id, 'pending'));
+    setKillProgress(initialProgress);
+    setShowKillModal(true);
+
+    // Add all to killing set
+    setKillingContainers((prev) => new Set([...prev, ...containerIds]));
+
+    let succeeded = 0;
+    let failed = 0;
+
+    try {
+      // Kill containers one by one to show progress
+      for (const containerId of containerIds) {
+        // Update status to killing
+        setKillProgress(prev => new Map(prev).set(containerId, 'killing'));
+
+        try {
+          const success = await client.killContainer(containerId);
+
+          // Update status based on result
+          setKillProgress(prev => new Map(prev).set(containerId, success ? 'success' : 'failed'));
+
+          if (success) {
+            succeeded++;
+          } else {
+            failed++;
+          }
+        } catch (error) {
+          setKillProgress(prev => new Map(prev).set(containerId, 'failed'));
+          failed++;
+        }
+      }
+
+      if (succeeded > 0) {
+        containersQuery.refetch();
+        workflowsQuery.refetch();
+      }
+
+      setSelectedContainers(new Set());
+
+      // Auto-close after 10 seconds when complete
+      setTimeout(() => {
+        setShowKillModal(false);
+        setKillProgress(new Map());
+      }, 10000);
+    } catch (error) {
+      console.error('Error killing containers:', error);
+    } finally {
+      // Remove all from killing set
+      setKillingContainers((prev) => {
+        const next = new Set(prev);
+        containerIds.forEach(id => next.delete(id));
         return next;
       });
     }
@@ -799,10 +901,51 @@ export function Processing() {
               No workflows were found for the selected time period.
             </div>
           ) : viewMode === 'table' ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+            <>
+              {/* Selection Toolbar */}
+              {selectedContainers.size > 0 && (
+                <div className="mb-4 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-blue-900">
+                      {selectedContainers.size} container{selectedContainers.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearSelection}
+                      className="text-sm text-blue-700 hover:text-blue-900 underline"
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleKillSelectedClick}
+                    disabled={Array.from(selectedContainers).some(id => killingContainers.has(id))}
+                    className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <StopCircle className="h-4 w-4" />
+                    Kill Selected
+                  </button>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th scope="col" className="relative w-12 px-6 sm:w-16 sm:px-8">
+                      <button
+                        type="button"
+                        onClick={handleToggleAllContainers}
+                        className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                      >
+                        {selectedContainers.size === paginatedWorkflows.filter(w => getWorkflowContainerId(w)).length && paginatedWorkflows.length > 0 ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+                    </th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Project</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Label</th>
                     <th scope="col" className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
@@ -830,6 +973,21 @@ export function Processing() {
 
                   return (
                     <tr key={rowKey} className="hover:bg-gray-50">
+                        <td className="relative w-12 px-6 sm:w-16 sm:px-8">
+                          {containerId && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleContainer(containerId)}
+                              className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                            >
+                              {selectedContainers.has(containerId) ? (
+                                <CheckSquare className="h-4 w-4" />
+                              ) : (
+                                <Square className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                           {project || '—'}
                         </td>
@@ -1018,7 +1176,8 @@ export function Processing() {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            </>
           ) : (
             /* Grid View */
             <div>
@@ -1236,6 +1395,171 @@ export function Processing() {
         open={!!selectedRawJsonContainerId}
         onClose={() => setSelectedRawJsonContainerId(null)}
       />
+
+      {/* Kill Confirmation Modal */}
+      {showKillConfirmation && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+            <div
+              className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
+              onClick={() => setShowKillConfirmation(false)}
+            ></div>
+
+            <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <AlertTriangle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                    <h3 className="text-lg font-semibold leading-6 text-gray-900">
+                      Kill {selectedContainers.size} Container{selectedContainers.size !== 1 ? 's' : ''}?
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        Are you sure you want to kill {selectedContainers.size} selected container{selectedContainers.size !== 1 ? 's' : ''}? This action cannot be undone.
+                      </p>
+                      <div className="mt-4 max-h-48 overflow-y-auto rounded-md bg-gray-50 p-3">
+                        <p className="text-xs font-medium text-gray-700 mb-2">Containers to be killed:</p>
+                        <ul className="space-y-1">
+                          {Array.from(selectedContainers).map(containerId => {
+                            const workflow = paginatedWorkflows.find(w => getWorkflowContainerId(w) === containerId);
+                            const label = workflow ? getWorkflowLabel(workflow) : containerId;
+                            return (
+                              <li key={containerId} className="text-xs text-gray-600 flex items-start gap-2">
+                                <span className="text-red-500 mt-0.5">•</span>
+                                <span className="flex-1">
+                                  <span className="font-medium">{label}</span>
+                                  <span className="text-gray-400 ml-1">({containerId})</span>
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 gap-3">
+                <button
+                  type="button"
+                  onClick={handleConfirmKill}
+                  className="inline-flex w-full justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 sm:w-auto"
+                >
+                  Yes, Kill {selectedContainers.size} Container{selectedContainers.size !== 1 ? 's' : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowKillConfirmation(false)}
+                  className="inline-flex w-full justify-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:w-auto"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kill Progress Modal */}
+      {showKillModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+            ></div>
+
+            <div className="inline-block transform overflow-hidden rounded-lg bg-white text-center align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-6 pb-6 pt-8">
+                {/* Spinning loader icon */}
+                <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center">
+                  <RefreshCw className="h-16 w-16 text-blue-600 animate-spin" />
+                </div>
+
+                {/* Title */}
+                <h3 className="text-2xl font-semibold text-gray-900 mb-4">
+                  Bulk Kill Containers
+                </h3>
+
+                {/* Progress text */}
+                <p className="text-blue-600 text-base mb-2">
+                  Killing {Array.from(killProgress.values()).filter(s => s === 'success' || s === 'failed').length} of {killProgress.size} containers
+                </p>
+
+                {/* Current item */}
+                {(() => {
+                  const currentEntry = Array.from(killProgress.entries()).find(([_, status]) => status === 'killing');
+                  if (currentEntry) {
+                    const [containerId] = currentEntry;
+                    const workflow = paginatedWorkflows.find(w => getWorkflowContainerId(w) === containerId);
+                    const label = workflow ? getWorkflowLabel(workflow) : containerId;
+                    return (
+                      <p className="text-gray-600 text-sm mb-6">
+                        Current: <strong>{label}</strong>
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Progress bar */}
+                <div className="mb-6 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{
+                      width: `${(Array.from(killProgress.values()).filter(s => s === 'success' || s === 'failed').length / killProgress.size) * 100}%`
+                    }}
+                  />
+                </div>
+
+                {/* Errors section */}
+                {Array.from(killProgress.values()).filter(s => s === 'failed').length > 0 && (
+                  <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-4 text-left">
+                    <h4 className="text-sm font-semibold text-red-900 mb-2">Errors:</h4>
+                    <ul className="space-y-1 text-xs text-red-800">
+                      {Array.from(killProgress.entries())
+                        .filter(([_, status]) => status === 'failed')
+                        .map(([containerId]) => {
+                          const workflow = paginatedWorkflows.find(w => getWorkflowContainerId(w) === containerId);
+                          const label = workflow ? getWorkflowLabel(workflow) : containerId;
+                          return (
+                            <li key={containerId} className="flex items-start gap-2">
+                              <span>•</span>
+                              <span>{label}: Failed to kill container</span>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Completion message */}
+                {Array.from(killProgress.values()).every(s => s === 'success' || s === 'failed') && (
+                  <p className="text-gray-500 text-sm mt-4">
+                    Completed! This dialog will close automatically.
+                  </p>
+                )}
+              </div>
+
+              {/* Close button */}
+              <div className="bg-gray-50 px-4 py-3 sm:px-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowKillModal(false);
+                    setKillProgress(new Map());
+                  }}
+                  disabled={Array.from(killProgress.values()).some(s => s === 'killing')}
+                  className="w-full inline-flex justify-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {Array.from(killProgress.values()).some(s => s === 'killing') ? 'Please wait...' : 'Close'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
