@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -51,6 +51,11 @@ export function TopNavigation() {
   const { client, currentUser } = useXnat();
   const navigate = useNavigate();
   const [browseOpen, setBrowseOpen] = useState(false);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 TopNavigation currentUser:', currentUser);
+  }, [currentUser]);
   const [newOpen, setNewOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
@@ -356,17 +361,22 @@ export function TopNavigation() {
               />
             </form>
 
-            <div className="text-xs text-gray-500 hidden sm:block">
-              {currentUser?.lastSuccessfulLogin ? (
-                <span>
-                  Last login: {new Date(currentUser.lastSuccessfulLogin).toLocaleString()}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-amber-600">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Session active
-                </span>
-              )}
+            <div className="flex items-center gap-3">
+              <div className="text-sm font-medium text-gray-900">
+                {currentUser?.username || currentUser?.login || 'User'}
+              </div>
+              <div className="text-xs text-gray-500 hidden sm:block">
+                {currentUser?.lastSuccessfulLogin ? (
+                  <span>
+                    Last login: {new Date(currentUser.lastSuccessfulLogin).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-amber-600">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Session active
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>

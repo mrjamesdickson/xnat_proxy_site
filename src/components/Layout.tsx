@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type ChangeEvent } from 'react';
 import { useXnat } from '../contexts/XnatContext';
 import {
   User,
@@ -104,6 +104,11 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchValue, setSearchValue] = useState('');
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 Layout currentUser:', JSON.stringify(currentUser, null, 2));
+  }, [currentUser]);
   const { theme, setTheme } = useTheme();
   const { isWidgetOpen, toggleWidget, closeWidget } = useContainerJobs();
 
@@ -477,10 +482,12 @@ export function Layout({ children }: LayoutProps) {
                   </div>
                   <div className="flex-1 text-left">
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {currentUser?.firstname} {currentUser?.lastname}
+                      {currentUser?.firstname && currentUser?.lastname
+                        ? `${currentUser.firstname} ${currentUser.lastname}`
+                        : currentUser?.username || currentUser?.login || 'User'}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {currentUser?.email}
+                      {currentUser?.email || (config?.baseURL && new URL(config.baseURL).hostname)}
                     </div>
                   </div>
                 </button>
@@ -576,7 +583,9 @@ export function Layout({ children }: LayoutProps) {
                       <User className="h-4 w-4 text-gray-600 dark:text-gray-200" />
                     </div>
                     <span className="ml-2 font-medium text-gray-700 dark:text-gray-100">
-                      {currentUser?.firstname} {currentUser?.lastname}
+                      {currentUser?.firstname && currentUser?.lastname
+                        ? `${currentUser.firstname} ${currentUser.lastname}`
+                        : currentUser?.username || currentUser?.login || 'User'}
                     </span>
                   </button>
 

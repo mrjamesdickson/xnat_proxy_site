@@ -1807,9 +1807,9 @@ export class XnatApiClient {
   }
 
   async getCurrentUser(): Promise<XnatUser> {
-    // Use /xapi/users/current which works for all authenticated users
+    // Use /xapi/users/profile which returns the current authenticated user
     try {
-      const response = await this.client.get('/xapi/users/current');
+      const response = await this.client.get('/xapi/users/profile');
       return response.data;
     } catch (error) {
       // Fallback: try the legacy endpoint if XAPI is not available
