@@ -24,7 +24,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
 import { BatchProcessingModal } from './BatchProcessingModal';
-import { CalendarView } from './CalendarView';
+import { DateFilterModal } from './DateFilterModal';
 
 export function Experiments() {
   const { client, config } = useXnat();
@@ -38,13 +38,15 @@ export function Experiments() {
   const [selectedModality, setSelectedModality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
-  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'calendar'>('table');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
   const [requestComments, setRequestComments] = useState('');
   const [selectedExperiments, setSelectedExperiments] = useState<Set<string>>(new Set());
   const [showBatchProcessModal, setShowBatchProcessModal] = useState(false);
   const [selectedCommandForBatch, setSelectedCommandForBatch] = useState<{command: any; wrapper: any} | null>(null);
+  const [showDateFilterModal, setShowDateFilterModal] = useState(false);
+  const [dateFilter, setDateFilter] = useState<{ start: string; end: string } | null>(null);
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -165,10 +167,17 @@ export function Experiments() {
     const matchesSearch = experiment.label?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       experimentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       subjectId?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesModality = !selectedModality || experiment.modality?.toLowerCase() === selectedModality.toLowerCase();
-    
-    return matchesSearch && matchesModality;
+
+    // Apply date filter if set
+    let matchesDate = true;
+    if (dateFilter && experiment.date) {
+      const expDate = experiment.date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'); // Convert YYYYMMDD to YYYY-MM-DD
+      matchesDate = expDate >= dateFilter.start && expDate <= dateFilter.end;
+    }
+
+    return matchesSearch && matchesModality && matchesDate;
   }) || [];
   
   console.log('Filtered experiments:', filteredExperiments);
@@ -364,43 +373,45 @@ export function Experiments() {
           </p>
         </div>
         <div className="mt-4 sm:mt-0">
-          <div className="inline-flex rounded-md shadow-sm" role="group">
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                  viewMode === 'grid'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                )}
+                title="Grid View"
+              >
+                <Grid3x3 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                  viewMode === 'table'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                )}
+                title="Table View"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setViewMode('grid')}
+              onClick={() => setShowDateFilterModal(true)}
               className={clsx(
-                'px-4 py-2 text-sm font-medium rounded-l-lg border',
-                viewMode === 'grid'
-                  ? 'bg-blue-600 text-white border-blue-600'
+                'px-4 py-2 text-sm font-medium rounded-lg border',
+                dateFilter
+                  ? 'bg-blue-100 text-blue-700 border-blue-300'
                   : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               )}
-              title="Grid View"
-            >
-              <Grid3x3 className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('table')}
-              className={clsx(
-                'px-4 py-2 text-sm font-medium border-t border-b',
-                viewMode === 'table'
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              )}
-              title="Table View"
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('calendar')}
-              className={clsx(
-                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
-                viewMode === 'calendar'
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              )}
-              title="Calendar View"
+              title="Filter by Date"
             >
               <Calendar className="h-4 w-4" />
             </button>
@@ -455,6 +466,54 @@ export function Experiments() {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Date Range Filters */}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFilter?.start || ''}
+            onChange={(e) => {
+              if (e.target.value && dateFilter?.end) {
+                setDateFilter({ start: e.target.value, end: dateFilter.end });
+                setCurrentPage(1);
+              } else if (e.target.value) {
+                setDateFilter({ start: e.target.value, end: e.target.value });
+                setCurrentPage(1);
+              }
+            }}
+            className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+            placeholder="Start date"
+          />
+          <span className="text-gray-500">to</span>
+          <input
+            type="date"
+            value={dateFilter?.end || ''}
+            onChange={(e) => {
+              if (e.target.value && dateFilter?.start) {
+                setDateFilter({ start: dateFilter.start, end: e.target.value });
+                setCurrentPage(1);
+              } else if (e.target.value) {
+                setDateFilter({ start: e.target.value, end: e.target.value });
+                setCurrentPage(1);
+              }
+            }}
+            className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+            placeholder="End date"
+          />
+          {dateFilter && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFilter(null);
+                setCurrentPage(1);
+              }}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+              title="Clear date filter"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -583,12 +642,6 @@ export function Experiments() {
             </p>
           </div>
         </div>
-      ) : viewMode === 'calendar' ? (
-        /* Calendar View */
-        <CalendarView
-          experiments={filteredExperiments}
-          getSubjectId={getSubjectId}
-        />
       ) : viewMode === 'table' ? (
         /* Table View */
         <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
@@ -1068,6 +1121,18 @@ export function Experiments() {
           }}
         />
       )}
+
+      {/* Date Filter Modal */}
+      <DateFilterModal
+        experiments={experiments || []}
+        isOpen={showDateFilterModal}
+        onClose={() => setShowDateFilterModal(false)}
+        onApplyFilter={(filter) => {
+          setDateFilter(filter);
+          setCurrentPage(1); // Reset to first page when filter changes
+        }}
+        currentFilter={dateFilter}
+      />
     </div>
   );
 }
