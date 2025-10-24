@@ -24,6 +24,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
 import { BatchProcessingModal } from './BatchProcessingModal';
+import { CalendarView } from './CalendarView';
 
 export function Experiments() {
   const { client, config } = useXnat();
@@ -37,7 +38,7 @@ export function Experiments() {
   const [selectedModality, setSelectedModality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'calendar'>('table');
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
   const [requestComments, setRequestComments] = useState('');
@@ -373,6 +374,7 @@ export function Experiments() {
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               )}
+              title="Grid View"
             >
               <Grid3x3 className="h-4 w-4" />
             </button>
@@ -380,13 +382,27 @@ export function Experiments() {
               type="button"
               onClick={() => setViewMode('table')}
               className={clsx(
-                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                'px-4 py-2 text-sm font-medium border-t border-b',
                 viewMode === 'table'
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               )}
+              title="Table View"
             >
               <List className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('calendar')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                viewMode === 'calendar'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+              title="Calendar View"
+            >
+              <Calendar className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -567,6 +583,12 @@ export function Experiments() {
             </p>
           </div>
         </div>
+      ) : viewMode === 'calendar' ? (
+        /* Calendar View */
+        <CalendarView
+          experiments={filteredExperiments}
+          getSubjectId={getSubjectId}
+        />
       ) : viewMode === 'table' ? (
         /* Table View */
         <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
