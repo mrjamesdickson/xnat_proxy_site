@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, X, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import type { XnatExperiment } from '../services/xnat-api';
@@ -9,15 +9,25 @@ interface CalendarViewProps {
   getSubjectId: (experiment: any) => string;
 }
 
-interface CalendarDay {
-  date: Date;
-  isCurrentMonth: boolean;
+interface DateBucket {
+  date: string; // YYYY-MM-DD format
+  displayLabel: string;
+  count: number;
   experiments: XnatExperiment[];
 }
 
 export function CalendarView({ experiments, getSubjectId }: CalendarViewProps) {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewType, setViewType] = useState<'month' | 'week'>('month');
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30); // Default 30 days
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  });
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month'>('day');
 
   // Helper to parse experiment date
   const parseExperimentDate = (experiment: XnatExperiment): Date | null => {
@@ -40,270 +50,265 @@ export function CalendarView({ experiments, getSubjectId }: CalendarViewProps) {
     }
   };
 
-  // Generate calendar days for month view
-  const calendarDays = useMemo((): CalendarDay[] => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
+  // Format date to YYYY-MM-DD
+  const formatDateKey = (date: Date): string => {
+    return date.toISOString().split('T')[0];
+  };
 
-    // Get first day of month
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
+  // Get week key (YYYY-Www)
+  const getWeekKey = (date: Date): string => {
+    const startOfYear = new Date(date.getFullYear(), 0, 1);
+    const days = Math.floor((date.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    return `${date.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+  };
 
-    // Get starting point (previous month days to show)
-    const startingDayOfWeek = firstDay.getDay(); // 0 = Sunday
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - startingDayOfWeek);
+  // Get month key (YYYY-MM)
+  const getMonthKey = (date: Date): string => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
 
-    // Generate 42 days (6 weeks)
-    const days: CalendarDay[] = [];
-    const current = new Date(startDate);
+  // Group experiments by date
+  const dateBuckets = useMemo((): DateBucket[] => {
+    const buckets = new Map<string, XnatExperiment[]>();
 
-    for (let i = 0; i < 42; i++) {
-      const dayExperiments = experiments.filter(exp => {
-        const expDate = parseExperimentDate(exp);
-        if (!expDate) return false;
+    experiments.forEach(exp => {
+      const expDate = parseExperimentDate(exp);
+      if (!expDate) return;
 
-        return expDate.getFullYear() === current.getFullYear() &&
-               expDate.getMonth() === current.getMonth() &&
-               expDate.getDate() === current.getDate();
-      });
+      // Check if within date range
+      const dateKey = formatDateKey(expDate);
+      if (dateKey < dateRange.start || dateKey > dateRange.end) return;
 
-      days.push({
-        date: new Date(current),
-        isCurrentMonth: current.getMonth() === month,
-        experiments: dayExperiments,
-      });
-
-      current.setDate(current.getDate() + 1);
-    }
-
-    return days;
-  }, [currentDate, experiments]);
-
-  // Generate week days for week view
-  const weekDays = useMemo((): CalendarDay[] => {
-    const startOfWeek = new Date(currentDate);
-    startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
-
-    const days: CalendarDay[] = [];
-    const current = new Date(startOfWeek);
-
-    for (let i = 0; i < 7; i++) {
-      const dayExperiments = experiments.filter(exp => {
-        const expDate = parseExperimentDate(exp);
-        if (!expDate) return false;
-
-        return expDate.getFullYear() === current.getFullYear() &&
-               expDate.getMonth() === current.getMonth() &&
-               expDate.getDate() === current.getDate();
-      });
-
-      days.push({
-        date: new Date(current),
-        isCurrentMonth: true,
-        experiments: dayExperiments,
-      });
-
-      current.setDate(current.getDate() + 1);
-    }
-
-    return days;
-  }, [currentDate, experiments]);
-
-  const navigateMonth = (direction: 'prev' | 'next') => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      if (direction === 'prev') {
-        newDate.setMonth(newDate.getMonth() - 1);
-      } else {
-        newDate.setMonth(newDate.getMonth() + 1);
+      let key: string;
+      switch (groupBy) {
+        case 'week':
+          key = getWeekKey(expDate);
+          break;
+        case 'month':
+          key = getMonthKey(expDate);
+          break;
+        default:
+          key = dateKey;
       }
-      return newDate;
-    });
-  };
 
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      if (direction === 'prev') {
-        newDate.setDate(newDate.getDate() - 7);
-      } else {
-        newDate.setDate(newDate.getDate() + 7);
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
       }
-      return newDate;
+      buckets.get(key)!.push(exp);
     });
+
+    // Convert to array and sort
+    const result: DateBucket[] = Array.from(buckets.entries())
+      .map(([date, exps]) => {
+        let displayLabel = date;
+        if (groupBy === 'week') {
+          const [year, week] = date.split('-W');
+          displayLabel = `Week ${week}, ${year}`;
+        } else if (groupBy === 'month') {
+          const [year, month] = date.split('-');
+          const monthDate = new Date(parseInt(year), parseInt(month) - 1);
+          displayLabel = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        } else {
+          const d = new Date(date);
+          displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        return {
+          date,
+          displayLabel,
+          count: exps.length,
+          experiments: exps,
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return result;
+  }, [experiments, dateRange, groupBy]);
+
+  const maxCount = Math.max(...dateBuckets.map(b => b.count), 1);
+
+  const handleQuickRange = (days: number) => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    setDateRange({
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    });
+    setSelectedDate(null);
   };
 
-  const goToToday = () => {
-    setCurrentDate(new Date());
-  };
-
-  const formatMonthYear = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  };
-
-  const formatWeekRange = (days: CalendarDay[]) => {
-    if (days.length === 0) return '';
-    const start = days[0].date;
-    const end = days[days.length - 1].date;
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
-
-  const daysToDisplay = viewType === 'month' ? calendarDays : weekDays;
-  const navigate = viewType === 'month' ? navigateMonth : navigateWeek;
+  const selectedExperiments = selectedDate
+    ? dateBuckets.find(b => b.date === selectedDate)?.experiments || []
+    : [];
 
   return (
-    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {viewType === 'month' ? formatMonthYear(currentDate) : formatWeekRange(daysToDisplay)}
-          </h2>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => navigate('prev')}
-              className="p-1 rounded hover:bg-gray-100 text-gray-600"
+    <div className="space-y-4">
+      {/* Controls */}
+      <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          {/* Date Range Inputs */}
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-gray-700">Date Range:</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+              className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+            />
+            <span className="text-gray-500">to</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+              className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Quick Range Buttons */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Quick:</span>
+            {[7, 30, 90, 180, 365].map(days => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => handleQuickRange(days)}
+                className="px-3 py-1 text-sm rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700"
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
+
+          {/* Group By */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Group by:</label>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as 'day' | 'week' | 'month')}
+              className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
             >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={goToToday}
-              className="px-3 py-1 text-sm font-medium rounded hover:bg-gray-100 text-gray-700"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('next')}
-              className="p-1 rounded hover:bg-gray-100 text-gray-600"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Histogram */}
+      <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-blue-600" />
+            <h3 className="text-lg font-semibold text-gray-900">Experiment Distribution</h3>
+          </div>
+          <div className="text-sm text-gray-500">
+            {dateBuckets.length} {groupBy === 'day' ? 'days' : groupBy === 'week' ? 'weeks' : 'months'} with data
           </div>
         </div>
 
-        {/* View Toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setViewType('month')}
-            className={clsx(
-              'px-3 py-1 text-sm font-medium rounded-md',
-              viewType === 'month'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            )}
-          >
-            Month
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewType('week')}
-            className={clsx(
-              'px-3 py-1 text-sm font-medium rounded-md',
-              viewType === 'week'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            )}
-          >
-            Week
-          </button>
-        </div>
-      </div>
-
-      {/* Calendar Grid */}
-      <div className="p-4">
-        {/* Day Headers */}
-        <div className={clsx(
-          'grid gap-px mb-px',
-          viewType === 'month' ? 'grid-cols-7' : 'grid-cols-7'
-        )}>
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div
-              key={day}
-              className="bg-gray-50 px-2 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wide"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-
-        {/* Calendar Days */}
-        <div className={clsx(
-          'grid gap-px bg-gray-200',
-          viewType === 'month' ? 'grid-cols-7' : 'grid-cols-7'
-        )}>
-          {daysToDisplay.map((day, idx) => {
-            const isToday = day.date.toDateString() === new Date().toDateString();
-
-            return (
-              <div
-                key={idx}
-                className={clsx(
-                  'bg-white min-h-[120px] p-2',
-                  !day.isCurrentMonth && 'bg-gray-50',
-                  viewType === 'week' && 'min-h-[200px]'
-                )}
-              >
-                {/* Date Header */}
-                <div className="flex items-center justify-between mb-2">
-                  <span className={clsx(
-                    'text-sm font-medium',
-                    isToday && 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center',
-                    !isToday && day.isCurrentMonth && 'text-gray-900',
-                    !isToday && !day.isCurrentMonth && 'text-gray-400'
-                  )}>
-                    {day.date.getDate()}
-                  </span>
-                  {day.experiments.length > 0 && (
-                    <span className="text-xs font-medium text-blue-600">
-                      {day.experiments.length}
-                    </span>
-                  )}
+        {dateBuckets.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <CalendarIcon className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+            <p>No experiments found in the selected date range</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {dateBuckets.map((bucket) => (
+              <div key={bucket.date} className="flex items-center gap-3">
+                <div className="w-24 text-sm text-gray-600 font-medium text-right flex-shrink-0">
+                  {bucket.displayLabel}
                 </div>
-
-                {/* Experiments for this day */}
-                <div className="space-y-1">
-                  {day.experiments.slice(0, viewType === 'week' ? 10 : 3).map((experiment, expIdx) => {
-                    const subjectId = getSubjectId(experiment);
-                    const projectId = experiment.project;
-
-                    return (
-                      <Link
-                        key={expIdx}
-                        to={`/projects/${projectId}/subjects/${subjectId}/experiments/${experiment.id || experiment.label}`}
-                        className="block px-2 py-1 text-xs rounded bg-blue-50 hover:bg-blue-100 text-blue-900 truncate"
-                        title={experiment.label || experiment.id}
-                      >
-                        <span className="font-medium">{experiment.modality || 'N/A'}</span>
-                        <span className="text-blue-700 ml-1">
-                          {experiment.label || experiment.id}
-                        </span>
-                      </Link>
-                    );
-                  })}
-
-                  {day.experiments.length > (viewType === 'week' ? 10 : 3) && (
-                    <div className="text-xs text-gray-500 px-2">
-                      +{day.experiments.length - (viewType === 'week' ? 10 : 3)} more
-                    </div>
-                  )}
+                <div className="flex-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(selectedDate === bucket.date ? null : bucket.date)}
+                    className={clsx(
+                      'h-8 rounded transition-all hover:opacity-80',
+                      selectedDate === bucket.date
+                        ? 'bg-blue-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    )}
+                    style={{
+                      width: `${(bucket.count / maxCount) * 100}%`,
+                      minWidth: '2rem',
+                    }}
+                    title={`${bucket.count} experiment${bucket.count !== 1 ? 's' : ''} - Click to view`}
+                  />
+                  <span className="text-sm font-semibold text-gray-900">
+                    {bucket.count}
+                  </span>
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Selected Date Details */}
+      {selectedDate && selectedExperiments.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Experiments for {dateBuckets.find(b => b.date === selectedDate)?.displayLabel}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(null)}
+              className="p-1 rounded-md hover:bg-gray-100"
+            >
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {selectedExperiments.map((experiment, idx) => {
+              const subjectId = getSubjectId(experiment);
+              const projectId = experiment.project;
+
+              return (
+                <Link
+                  key={idx}
+                  to={`/projects/${projectId}/subjects/${subjectId}/experiments/${experiment.id || experiment.label}`}
+                  className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0">
+                      <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <span className="text-sm font-semibold text-blue-700">
+                          {experiment.modality || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900">
+                        {experiment.label || experiment.id}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {projectId} • {subjectId}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    View →
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Summary */}
-      <div className="border-t border-gray-200 px-6 py-3 bg-gray-50">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <CalendarIcon className="h-4 w-4" />
+      <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+        <div className="flex items-center justify-between">
           <span>
-            Showing {experiments.length} experiment{experiments.length !== 1 ? 's' : ''}
+            Total: {experiments.length} experiment{experiments.length !== 1 ? 's' : ''}
+          </span>
+          <span>
+            In range: {dateBuckets.reduce((sum, b) => sum + b.count, 0)} experiment{dateBuckets.reduce((sum, b) => sum + b.count, 0) !== 1 ? 's' : ''}
           </span>
         </div>
       </div>
