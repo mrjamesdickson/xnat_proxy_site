@@ -18,6 +18,7 @@ import {
   Unlink,
   Camera
 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 const { ViewportType } = Enums;
 
@@ -874,78 +875,84 @@ export function CornerstoneViewer() {
 
         <div className="flex items-center gap-1">
           {/* W/L Presets */}
-          <select
-            value={currentWLPreset}
-            onChange={(e) => applyWLPreset(e.target.value)}
-            className="text-xs bg-gray-700 text-gray-300 rounded px-2 py-1 border border-gray-600 hover:bg-gray-600 transition-colors"
-            disabled={!volumeLoaded}
-            title="Window/Level Presets"
-          >
-            <option value="default">Auto</option>
-            <option value="lung">Lung</option>
-            <option value="bone">Bone</option>
-            <option value="brain">Brain</option>
-            <option value="soft-tissue">Soft Tissue</option>
-            <option value="liver">Liver</option>
-            <option value="custom">Custom</option>
-          </select>
+          <Tooltip content="Window/Level Presets">
+            <select
+              value={currentWLPreset}
+              onChange={(e) => applyWLPreset(e.target.value)}
+              className="text-xs bg-gray-700 text-gray-300 rounded px-2 py-1 border border-gray-600 hover:bg-gray-600 transition-colors"
+              disabled={!volumeLoaded}
+            >
+              <option value="default">Auto</option>
+              <option value="lung">Lung</option>
+              <option value="bone">Bone</option>
+              <option value="brain">Brain</option>
+              <option value="soft-tissue">Soft Tissue</option>
+              <option value="liver">Liver</option>
+              <option value="custom">Custom</option>
+            </select>
+          </Tooltip>
 
           {/* Reset Views */}
-          <button
-            onClick={resetViews}
-            className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-            title="Reset Views"
-            disabled={!volumeLoaded}
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+          <Tooltip content="Reset Views">
+            <button
+              onClick={resetViews}
+              className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+              disabled={!volumeLoaded}
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </Tooltip>
 
           {/* Link Viewports */}
-          <button
-            onClick={() => setViewportsLinked(!viewportsLinked)}
-            className={`p-2 rounded transition-colors ${
-              viewportsLinked
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-            }`}
-            title={viewportsLinked ? 'Unlink Viewports' : 'Link Viewports'}
-            disabled={!volumeLoaded}
-          >
-            {viewportsLinked ? <Link className="w-4 h-4" /> : <Unlink className="w-4 h-4" />}
-          </button>
+          <Tooltip content={viewportsLinked ? 'Unlink Viewports' : 'Link Viewports'}>
+            <button
+              onClick={() => setViewportsLinked(!viewportsLinked)}
+              className={`p-2 rounded transition-colors ${
+                viewportsLinked
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+              disabled={!volumeLoaded}
+            >
+              {viewportsLinked ? <Link className="w-4 h-4" /> : <Unlink className="w-4 h-4" />}
+            </button>
+          </Tooltip>
 
           {/* Screenshot */}
-          <button
-            onClick={takeScreenshot}
-            className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-            title="Take Screenshot"
-            disabled={!volumeLoaded}
-          >
-            <Camera className="w-4 h-4" />
-          </button>
+          <Tooltip content="Take Screenshot">
+            <button
+              onClick={takeScreenshot}
+              className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+              disabled={!volumeLoaded}
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+          </Tooltip>
 
           {/* Metadata */}
-          <button
-            onClick={() => setShowMetadata(!showMetadata)}
-            className={`p-2 rounded transition-colors ${
-              showMetadata
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-            }`}
-            title="DICOM Metadata"
-            disabled={!volumeLoaded}
-          >
-            <Info className="w-4 h-4" />
-          </button>
+          <Tooltip content="DICOM Metadata">
+            <button
+              onClick={() => setShowMetadata(!showMetadata)}
+              className={`p-2 rounded transition-colors ${
+                showMetadata
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+              }`}
+              disabled={!volumeLoaded}
+            >
+              <Info className="w-4 h-4" />
+            </button>
+          </Tooltip>
 
           {/* Fullscreen */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+          <Tooltip content={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -966,13 +973,14 @@ export function CornerstoneViewer() {
           <div className="absolute top-2 left-2 text-white text-sm font-semibold z-10 bg-black bg-opacity-50 px-2 py-1 rounded">
             Axial
           </div>
-          <button
-            onClick={() => toggleMaximizeViewport('AXIAL')}
-            className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
-            title={maximizedViewport === 'AXIAL' ? 'Restore' : 'Maximize'}
-          >
-            {maximizedViewport === 'AXIAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+          <Tooltip content={maximizedViewport === 'AXIAL' ? 'Restore' : 'Maximize'}>
+            <button
+              onClick={() => toggleMaximizeViewport('AXIAL')}
+              className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
+            >
+              {maximizedViewport === 'AXIAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </Tooltip>
           <div ref={axialRef} className="flex-1" style={{ width: '100%', minHeight: '300px' }} />
           {volumeLoaded && allFiles.length > 1 && (
             <div className="bg-gray-900 px-2 py-1 flex items-center gap-2">
@@ -996,13 +1004,14 @@ export function CornerstoneViewer() {
           <div className="absolute top-2 left-2 text-white text-sm font-semibold z-10 bg-black bg-opacity-50 px-2 py-1 rounded">
             Sagittal
           </div>
-          <button
-            onClick={() => toggleMaximizeViewport('SAGITTAL')}
-            className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
-            title={maximizedViewport === 'SAGITTAL' ? 'Restore' : 'Maximize'}
-          >
-            {maximizedViewport === 'SAGITTAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+          <Tooltip content={maximizedViewport === 'SAGITTAL' ? 'Restore' : 'Maximize'}>
+            <button
+              onClick={() => toggleMaximizeViewport('SAGITTAL')}
+              className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
+            >
+              {maximizedViewport === 'SAGITTAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </Tooltip>
           <div ref={sagittalRef} className="flex-1" style={{ width: '100%', minHeight: '300px' }} />
         </div>
 
@@ -1013,13 +1022,14 @@ export function CornerstoneViewer() {
           <div className="absolute top-2 left-2 text-white text-sm font-semibold z-10 bg-black bg-opacity-50 px-2 py-1 rounded">
             Coronal
           </div>
-          <button
-            onClick={() => toggleMaximizeViewport('CORONAL')}
-            className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
-            title={maximizedViewport === 'CORONAL' ? 'Restore' : 'Maximize'}
-          >
-            {maximizedViewport === 'CORONAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
+          <Tooltip content={maximizedViewport === 'CORONAL' ? 'Restore' : 'Maximize'}>
+            <button
+              onClick={() => toggleMaximizeViewport('CORONAL')}
+              className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black bg-opacity-50 hover:bg-opacity-70 text-white transition-colors"
+            >
+              {maximizedViewport === 'CORONAL' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </Tooltip>
           <div ref={coronalRef} className="flex-1" style={{ width: '100%', minHeight: '300px' }} />
         </div>
 
