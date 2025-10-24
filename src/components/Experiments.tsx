@@ -23,7 +23,7 @@ import clsx from 'clsx';
 import { ScanSnapshot } from './ScanSnapshot';
 
 export function Experiments() {
-  const { client } = useXnat();
+  const { client, config } = useXnat();
   const [searchParams] = useSearchParams();
   const { project: routeProject, subject: routeSubject } = useParams<{
     project: string;
@@ -35,6 +35,9 @@ export function Experiments() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
+  const [requestAccessLevel, setRequestAccessLevel] = useState('member');
+  const [requestComments, setRequestComments] = useState('');
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -120,7 +123,7 @@ export function Experiments() {
         throw err;
       }
     },
-    enabled: !!client,
+    enabled: !!client && (!!selectedProject || !!routeProject),
   });
 
   if (experiments?.[0]) {
@@ -189,9 +192,52 @@ export function Experiments() {
     setCurrentPage(1);
   };
 
-  const modalities = experiments 
+  const handleRequestAccess = async () => {
+    const targetProject = routeProject || selectedProject;
+    if (!targetProject || !client) return;
+
+    try {
+      // Use XNAT's RequestAccess endpoint with form data
+      const formData = new URLSearchParams();
+      formData.append('project', targetProject);
+      formData.append('access_level', requestAccessLevel);
+      if (requestComments.trim()) {
+        formData.append('comments', requestComments.trim());
+      }
+
+      const response = await client.getHttpClient().post('/app/action/RequestAccess', formData, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      if (response.status === 200 || response.status === 302) {
+        setShowAccessRequestModal(false);
+        setRequestComments('');
+        setRequestAccessLevel('member');
+        alert(`✓ Access request submitted for project: ${targetProject}\n\nYour request will be reviewed by the project administrators.`);
+      }
+    } catch (error: any) {
+      console.error('Failed to request access:', error);
+
+      // Fallback: provide instructions to user
+      const message = `Failed to submit access request automatically.\n\n` +
+        `To request access to project "${targetProject}":\n\n` +
+        `1. Contact your XNAT administrator\n` +
+        `2. Or visit: ${config?.baseURL || window.location.origin}/app/action/RequestAccess\n\n` +
+        `Project: ${targetProject}`;
+
+      alert(message);
+      setShowAccessRequestModal(false);
+    }
+  };
+
+  const modalities = experiments
     ? [...new Set(experiments.map(exp => exp.modality).filter((m): m is string => Boolean(m)))]
     : [];
+
+  // Check if error is a permission error (403)
+  const isPermissionError = error && (error as any).response?.status === 403;
 
   const getModalityIcon = (modality: string | undefined) => {
     if (!modality) return FileImage;
@@ -229,17 +275,7 @@ export function Experiments() {
     }
   };
 
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <div className="rounded-md bg-red-50 p-4">
-          <div className="text-sm text-red-700">
-            Failed to load experiments. Please try again later.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Don't show error here - handle it in the main render section
 
   return (
     <div className="space-y-6">
@@ -306,8 +342,9 @@ export function Experiments() {
             className="block w-full rounded-md border-0 py-1.5 pl-10 pr-10 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
             value={selectedProject}
             onChange={(e) => handleFilterChange('project', e.target.value)}
+            disabled={!!routeProject}
           >
-            <option value="">All Projects</option>
+            <option value="">Select a project...</option>
             {projects?.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name || project.id}
@@ -333,7 +370,53 @@ export function Experiments() {
       </div>
 
       {/* Experiments Grid */}
-      {isLoading ? (
+      {!selectedProject && !routeProject ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <div className="text-center py-12">
+            <Filter className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Select a project</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Please select a project from the dropdown above to view experiments.
+            </p>
+          </div>
+        </div>
+      ) : isPermissionError ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <div className="text-center py-12">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
+              <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+            <h3 className="mt-4 text-lg font-medium text-gray-900">Access Required</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              You don't have permission to view experiments in the <strong>{routeProject || selectedProject}</strong> project.
+            </p>
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setShowAccessRequestModal(true)}
+                className="inline-flex items-center rounded-md bg-blue-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                Request Access
+              </button>
+            </div>
+            <p className="mt-4 text-xs text-gray-400">
+              Or contact your XNAT administrator to request access to this project.
+            </p>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <div className="text-center py-12">
+            <div className="rounded-md bg-red-50 p-4 mx-auto max-w-md">
+              <div className="text-sm text-red-700">
+                Failed to load experiments. Please try again later.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isLoading ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => (
             <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
@@ -356,17 +439,17 @@ export function Experiments() {
           ))}
         </div>
       ) : filteredExperiments.length === 0 ? (
-        <div className="text-center py-12">
-          <FileImage className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">
-            {searchTerm || selectedProject || selectedModality ? 'No experiments found' : 'No experiments'}
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {searchTerm || selectedProject || selectedModality
-              ? 'Try adjusting your search or filter criteria.'
-              : 'No experiments found in your accessible projects.'
-            }
-          </p>
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-lg overflow-hidden">
+          <div className="text-center py-12">
+            <FileImage className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No experiments found</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {searchTerm || selectedModality
+                ? 'Try adjusting your search or filter criteria.'
+                : 'No experiments found in this project.'
+              }
+            </p>
+          </div>
         </div>
       ) : viewMode === 'table' ? (
         /* Table View */
@@ -714,6 +797,89 @@ export function Experiments() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Access Request Modal */}
+      {showAccessRequestModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
+            {/* Background overlay */}
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              aria-hidden="true"
+              onClick={() => setShowAccessRequestModal(false)}
+            ></div>
+
+            {/* Modal panel */}
+            <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <User className="h-6 w-6 text-blue-600" aria-hidden="true" />
+                  </div>
+                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left flex-1">
+                    <h3 className="text-base font-semibold leading-6 text-gray-900" id="modal-title">
+                      Request Access to {routeProject || selectedProject}
+                    </h3>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <label htmlFor="access-level" className="block text-sm font-medium text-gray-700">
+                          Access Level
+                        </label>
+                        <select
+                          id="access-level"
+                          value={requestAccessLevel}
+                          onChange={(e) => setRequestAccessLevel(e.target.value)}
+                          className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm shadow-sm ring-1 ring-inset ring-gray-300"
+                        >
+                          <option value="member">Member</option>
+                          <option value="collaborator">Collaborator</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Select the level of access you need
+                        </p>
+                      </div>
+                      <div>
+                        <label htmlFor="comments" className="block text-sm font-medium text-gray-700">
+                          Comments (Optional)
+                        </label>
+                        <textarea
+                          id="comments"
+                          rows={3}
+                          value={requestComments}
+                          onChange={(e) => setRequestComments(e.target.value)}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm ring-1 ring-inset ring-gray-300 px-3 py-2"
+                          placeholder="Explain why you need access to this project..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6 gap-2">
+                <button
+                  type="button"
+                  onClick={handleRequestAccess}
+                  className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto"
+                >
+                  Submit Request
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAccessRequestModal(false);
+                    setRequestComments('');
+                    setRequestAccessLevel('member');
+                  }}
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

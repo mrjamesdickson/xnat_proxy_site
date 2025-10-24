@@ -772,6 +772,14 @@ export class XnatApiClient {
     this.setupInterceptors();
   }
 
+  /**
+   * Get the underlying Axios HTTP client for making custom requests
+   * @returns The Axios instance used by this API client
+   */
+  getHttpClient(): AxiosInstance {
+    return this.client;
+  }
+
   private extractString(source: UnknownRecord | undefined, keys: string[]): string | undefined {
     if (!source) return undefined;
     for (const key of keys) {
@@ -1799,28 +1807,32 @@ export class XnatApiClient {
   }
 
   async getCurrentUser(): Promise<XnatUser> {
-    // First, get the current username from the config
-    const username = this.config.username;
-
-    if (username) {
-      // Fetch the full user details using the username
-      const response = await this.client.get(`/data/user/${username}`, {
-        params: { format: 'json' }
-      });
+    // Use /xapi/users/current which works for all authenticated users
+    try {
+      const response = await this.client.get('/xapi/users/current');
       return response.data;
-    }
-
-    // Fallback: try to get it from /data/user (returns list of usernames)
-    const response = await this.client.get('/data/user', {
-      params: { format: 'json' }
-    });
-
-    // If we get an array, it's a list of users, not the current user
-    if (Array.isArray(response.data)) {
+    } catch (error) {
+      // Fallback: try the legacy endpoint if XAPI is not available
+      const username = this.config.username;
+      if (username) {
+        try {
+          const response = await this.client.get(`/data/user/${username}`, {
+            params: { format: 'json' }
+          });
+          return response.data;
+        } catch (legacyError) {
+          // If both fail, return a minimal user object with just the username
+          return {
+            id: username,
+            ID: username,
+            login: username,
+            username: username,
+            enabled: true,
+          } as XnatUser;
+        }
+      }
       throw new Error('Unable to determine current user');
     }
-
-    return response.data;
   }
 
   async createUser(user: CreateXnatUserRequest): Promise<XnatUser> {

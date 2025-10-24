@@ -53,7 +53,7 @@ interface SystemInfo {
 }
 
 export function SystemMonitoring() {
-  const { client, config } = useXnat();
+  const { client } = useXnat();
   const [selectedGraph, setSelectedGraph] = useState<string | null>(null);
 
   // In dev mode, use /api/xnat prefix for proxy; in production, use direct path
@@ -67,7 +67,7 @@ export function SystemMonitoring() {
 
       // Fetch the monitoring HTML page directly using the XNAT client (goes through proxy in dev)
       try {
-        const response = await client.client.get('/monitoring', {
+        const response = await client.getHttpClient().get('/monitoring', {
           headers: { 'Accept': 'text/html' }
         });
 
