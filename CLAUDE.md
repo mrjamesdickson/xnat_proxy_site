@@ -108,3 +108,58 @@ The system interfaces with two main XNAT API layers:
 - Session-based authentication with JSESSIONID cookie
 - Request/response interceptors handle authentication and error states
 - TypeScript interfaces defined for all major data entities (Project, Subject, Experiment, Scan)
+
+## Popup Mode Integration
+
+The React application supports a popup mode that hides navigation UI elements, making it ideal for embedding pages in popup windows from the XNAT plugin.
+
+### How It Works
+
+The `Layout` component checks for a `popup=true` URL parameter. When present, it hides:
+- Left sidebar navigation
+- Top header bar
+- Mobile navigation
+- Chat widget
+- Container jobs widget
+- Route debug panel
+- Reduces content padding for a more compact view
+
+### Usage from XNAT Plugin
+
+**Velocity Template Example:**
+```velocity
+<a href="/morpheus/upload/compressed?popup=true"
+   onclick="window.open(this.href, 'uploader', 'width=1000,height=700,scrollbars=yes,resizable=yes'); return false;">
+  Open Compressed Uploader
+</a>
+```
+
+**JavaScript Helper Function:**
+```javascript
+function openMorpheusPopup(path) {
+  window.open(
+    `/morpheus${path}?popup=true`,
+    'morpheus-popup',
+    'width=1200,height=800,scrollbars=yes,resizable=yes'
+  );
+}
+
+// Usage examples:
+openMorpheusPopup('/upload/compressed');
+openMorpheusPopup('/projects/PROJ001');
+openMorpheusPopup('/experiments/PROJ001/SUBJ001/EXP001');
+openMorpheusPopup('/search?term=MRI&type=all');
+```
+
+**Benefits:**
+- Any page in the React app can be opened in popup mode
+- Consistent authentication (shares session with main XNAT)
+- Clean, focused UI without navigation clutter
+- User stays in context of their XNAT workflow
+
+### Implementation Details
+
+Located in `src/components/Layout.tsx`:
+- Uses `useSearchParams()` hook to detect `popup=true`
+- Conditionally renders UI elements based on `isPopupMode` boolean
+- Maintains full functionality while hiding navigation chrome

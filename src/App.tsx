@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
 import { XnatProvider, useXnat } from './contexts/XnatContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -102,15 +102,12 @@ function AppContent() {
 }
 
 function App() {
-  // Use /morpheus basename in production builds
-  const basename = import.meta.env.BASE_URL;
-
   return (
     <ThemeProvider>
       <QueryProvider>
         <XnatProvider>
           <ContainerJobsProvider>
-            <Router basename={basename}>
+            <Router>
               <AppContent />
             </Router>
           </ContainerJobsProvider>

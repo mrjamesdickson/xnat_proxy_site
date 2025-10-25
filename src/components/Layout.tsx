@@ -24,7 +24,9 @@ import {
   FolderInput,
   FileArchive,
   Layers,
-  Monitor
+  Monitor,
+  ExternalLinkIcon,
+  X
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -68,7 +70,8 @@ const navigation = [
     icon: Upload,
     submenu: [
       { name: 'DICOM Upload', href: '/upload', icon: Upload },
-      { name: 'Compressed Uploader', href: '/upload/compressed', icon: FileArchive }
+      { name: 'Compressed Uploader', href: '/upload/compressed', icon: FileArchive },
+      { name: 'Compressed Uploader (Popup)', href: '/?popup=true#/upload/compressed', icon: ExternalLinkIcon, isPopup: true }
     ]
   },
   { name: 'Search', href: '/search', icon: Search },
@@ -105,10 +108,48 @@ export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const [searchValue, setSearchValue] = useState('');
 
+  // Check if popup mode is enabled
+  // With HashRouter, query params are in window.location.search, not in useSearchParams
+  const isPopupMode = useMemo(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('popup') === 'true';
+  }, []);
+
   // Debug logging
   useEffect(() => {
     console.log('🔍 Layout currentUser:', JSON.stringify(currentUser, null, 2));
   }, [currentUser]);
+
+  // Intercept link clicks in popup mode to navigate parent window
+  useEffect(() => {
+    if (!isPopupMode || !window.opener || window.opener.closed) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const link = target.closest('a');
+
+      if (link && link.href) {
+        // Only intercept internal navigation links (not external links or # anchors)
+        const url = new URL(link.href);
+        const isInternal = url.origin === window.location.origin;
+        const isHashOnly = link.getAttribute('href')?.startsWith('#');
+
+        if (isInternal && !isHashOnly) {
+          e.preventDefault();
+          e.stopPropagation();
+          // Navigate parent window to the full version (without popup parameter)
+          const pathname = url.pathname + url.search.replace(/[?&]popup=true(&|$)/, '$1').replace(/^&/, '?').replace(/[?&]$/, '');
+          window.opener.location.href = url.origin + pathname + url.hash;
+          window.opener.focus();
+          // Close the popup after navigating parent
+          window.close();
+        }
+      }
+    };
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [isPopupMode]);
   const { theme, setTheme } = useTheme();
   const { isWidgetOpen, toggleWidget, closeWidget } = useContainerJobs();
 
@@ -199,8 +240,8 @@ export function Layout({ children }: LayoutProps) {
         isViewerRoute ? 'bg-gray-100 dark:bg-slate-900 flex flex-col' : 'bg-gray-50 dark:bg-slate-950 flex'
       )}
     >
-      {/* Left Sidebar - Hidden on viewer route */}
-      {!isViewerRoute && (
+      {/* Left Sidebar - Hidden on viewer route or popup mode */}
+      {!isViewerRoute && !isPopupMode && (
         <div className="hidden md:flex md:w-64 md:flex-col">
           <div className="flex flex-col flex-grow border-r border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             {/* Logo */}
@@ -236,10 +277,17 @@ export function Layout({ children }: LayoutProps) {
                           <div className="mt-1 ml-8 space-y-1">
                             {item.submenu.map((subItem) => {
                               const isActive = location.pathname === subItem.href;
+                              const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+                                if ('isPopup' in subItem && subItem.isPopup) {
+                                  e.preventDefault();
+                                  window.open(subItem.href, 'morpheus-popup', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+                                }
+                              };
                               return (
                                 <Link
                                   key={subItem.name}
                                   to={subItem.href}
+                                  onClick={handleClick}
                                   className={clsx(
                                     'flex items-center rounded-md px-3 py-2 text-sm transition-colors',
                                     isActive
@@ -517,7 +565,32 @@ export function Layout({ children }: LayoutProps) {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col relative">
 
-        {/* Top Header */}
+        {/* Popup Mode Header - Simple header with logo and close button */}
+        {isPopupMode && (
+          <header className="flex-shrink-0 border-b border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="px-4 sm:px-6 lg:px-8">
+              <div className="flex h-14 items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+                    <span className="text-white font-bold text-sm">M</span>
+                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">Morpheus</span>
+                </div>
+                <button
+                  onClick={() => window.close()}
+                  className="inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-400 dark:hover:bg-slate-800 dark:hover:text-gray-200"
+                  aria-label="Close popup"
+                  title="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          </header>
+        )}
+
+        {/* Top Header - Hidden in popup mode */}
+        {!isPopupMode && (
         <header className="flex-shrink-0 border-b border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
@@ -644,9 +717,10 @@ export function Layout({ children }: LayoutProps) {
             </div>
           </div>
         </header>
+        )}
 
-        {/* Mobile Navigation */}
-        {!isViewerRoute && (
+        {/* Mobile Navigation - Hidden in popup mode */}
+        {!isViewerRoute && !isPopupMode && (
           <div className="md:hidden border-b border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             <nav className="px-4 py-2 space-y-1">
               {navigation.map((item) => {
@@ -668,10 +742,17 @@ export function Layout({ children }: LayoutProps) {
                       <div className="mt-1 ml-7 space-y-1">
                         {item.submenu.map((subItem) => {
                           const isActive = location.pathname === subItem.href;
+                          const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+                            if ('isPopup' in subItem && subItem.isPopup) {
+                              e.preventDefault();
+                              window.open(subItem.href, 'morpheus-popup', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+                            }
+                          };
                           return (
                             <Link
                               key={subItem.name}
                               to={subItem.href}
+                              onClick={handleClick}
                               className={clsx(
                                 'flex items-center rounded-md px-3 py-2 text-sm transition-colors',
                                 isActive
@@ -742,13 +823,16 @@ export function Layout({ children }: LayoutProps) {
             {children}
           </div>
         ) : (
-          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 w-full">
+          <main className={clsx(
+            'flex-1 w-full',
+            isPopupMode ? 'p-4' : 'px-4 sm:px-6 lg:px-8 py-8'
+          )}>
             {children}
           </main>
         )}
-        {!isViewerRoute && <ChatWidget />}
-        <ContainerJobsWidget isOpen={isWidgetOpen} onClose={closeWidget} />
-        <RouteDebugPanel />
+        {!isViewerRoute && !isPopupMode && <ChatWidget />}
+        {!isPopupMode && <ContainerJobsWidget isOpen={isWidgetOpen} onClose={closeWidget} />}
+        {!isPopupMode && <RouteDebugPanel />}
       </div>
     </div>
   );
