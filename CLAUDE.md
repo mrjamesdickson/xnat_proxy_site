@@ -9,6 +9,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Lint code**: `npm run lint` (ESLint with TypeScript support)
 - **Preview production build**: `npm run preview`
 
+## Important Development Rules
+
+**CRITICAL**: Before committing any code changes, always run `../build_plugin.sh` from the root plugin directory to ensure the TypeScript build passes and the plugin builds successfully. This script:
+1. Cleans the plugin resources directory
+2. Runs `npm run build` to compile TypeScript and build with Vite
+3. Runs Gradle tasks to build the plugin JAR
+4. Catches any TypeScript errors or build issues before commit
+
+Never commit code without running this build script first.
+
 ## Architecture Overview
 
 This is a React TypeScript application that provides a modern web interface for XNAT (neuroimaging data management platform). The app uses a client-server architecture where the React frontend communicates with XNAT servers via REST APIs.

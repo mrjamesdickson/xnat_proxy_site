@@ -58,7 +58,7 @@ export function Tooltip({ content, children, delay = 150 }: TooltipProps) {
 
   const childrenWithRef = (
     <children.type
-      {...children.props}
+      {...(children.props as any)}
       ref={(node: HTMLElement) => {
         triggerRef.current = node;
         // Handle existing ref if present

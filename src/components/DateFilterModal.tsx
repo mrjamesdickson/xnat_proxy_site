@@ -264,8 +264,6 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
     if (!rangeSelection) return allDateBuckets;
 
     const filtered = allDateBuckets.filter((bucket) => {
-      const bucketStart = bucket.x;
-      const bucketEnd = bucket.x + bucket.width;
       const bucketCenter = bucket.x + bucket.width / 2;
 
       // Check if bucket overlaps with selection range

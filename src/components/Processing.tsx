@@ -241,7 +241,7 @@ export function Processing() {
   const [selectedRawJsonContainerId, setSelectedRawJsonContainerId] = useState<string | null>(null);
   const [killingContainers, setKillingContainers] = useState<Set<string>>(new Set());
   const [selectedContainers, setSelectedContainers] = useState<Set<string>>(new Set());
-  const [killResults, setKillResults] = useState<{ succeeded: number; failed: number; total: number; error?: string } | null>(null);
+  // const [killResults, setKillResults] = useState<{ succeeded: number; failed: number; total: number; error?: string } | null>(null);
   const [killProgress, setKillProgress] = useState<Map<string, 'pending' | 'killing' | 'success' | 'failed'>>(new Map());
   const [showKillModal, setShowKillModal] = useState(false);
   const [showKillConfirmation, setShowKillConfirmation] = useState(false);
