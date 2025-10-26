@@ -12,11 +12,19 @@ export interface AnonymizationChange {
   newValue: string;
 }
 
+export interface BasicProfileTagValue {
+  tag: string;
+  tagName: string;
+  value: string;
+  fileName: string;
+}
+
 export interface AnonymizationManifest {
   timestamp: string;
   totalFiles: number;
   changes: AnonymizationChange[];
   warnings: string[];
+  basicProfileTagValues?: BasicProfileTagValue[];
 }
 
 /**
@@ -50,11 +58,60 @@ version "6.3"
 (0008,1060) := ""                    // Name of Physician(s) Reading Study
 `;
 
+/**
+ * DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E)
+ * Tags that should be removed or modified for de-identification
+ */
+export const BASIC_PROFILE_TAGS: { tag: string; tagName: string; action: 'REMOVE' | 'MODIFY' }[] = [
+  // Tags that should be REMOVED
+  { tag: '00080012', tagName: 'Instance Creation Date', action: 'REMOVE' },
+  { tag: '00080013', tagName: 'Instance Creation Time', action: 'REMOVE' },
+  { tag: '00080050', tagName: 'Accession Number', action: 'REMOVE' },
+  { tag: '00080080', tagName: 'Institution Name', action: 'REMOVE' },
+  { tag: '00080081', tagName: 'Institution Address', action: 'REMOVE' },
+  { tag: '00080090', tagName: 'Referring Physician Name', action: 'REMOVE' },
+  { tag: '00081010', tagName: 'Station Name', action: 'REMOVE' },
+  { tag: '00081030', tagName: 'Study Description', action: 'REMOVE' },
+  { tag: '00081040', tagName: 'Institutional Department Name', action: 'REMOVE' },
+  { tag: '00081048', tagName: 'Physician(s) of Record', action: 'REMOVE' },
+  { tag: '00081050', tagName: 'Performing Physician Name', action: 'REMOVE' },
+  { tag: '00081060', tagName: 'Name of Physician(s) Reading Study', action: 'REMOVE' },
+  { tag: '00081070', tagName: 'Operators Name', action: 'REMOVE' },
+  { tag: '00100010', tagName: 'Patient Name', action: 'REMOVE' },
+  { tag: '00100020', tagName: 'Patient ID', action: 'REMOVE' },
+  { tag: '00100030', tagName: 'Patient Birth Date', action: 'REMOVE' },
+  { tag: '00100032', tagName: 'Patient Birth Time', action: 'REMOVE' },
+  { tag: '00101000', tagName: 'Other Patient IDs', action: 'REMOVE' },
+  { tag: '00101001', tagName: 'Other Patient Names', action: 'REMOVE' },
+  { tag: '00101010', tagName: 'Patient Age', action: 'REMOVE' },
+  { tag: '00101020', tagName: 'Patient Size', action: 'REMOVE' },
+  { tag: '00101030', tagName: 'Patient Weight', action: 'REMOVE' },
+  { tag: '00101040', tagName: 'Patient Address', action: 'REMOVE' },
+  { tag: '00102154', tagName: 'Patient Telephone Numbers', action: 'REMOVE' },
+  { tag: '00104000', tagName: 'Patient Comments', action: 'REMOVE' },
+  { tag: '00181000', tagName: 'Device Serial Number', action: 'REMOVE' },
+  { tag: '00181030', tagName: 'Protocol Name', action: 'REMOVE' },
+  { tag: '00204000', tagName: 'Image Comments', action: 'REMOVE' },
+  { tag: '00321032', tagName: 'Requesting Physician', action: 'REMOVE' },
+  { tag: '00324000', tagName: 'Study Comments', action: 'REMOVE' },
+
+  // Tags that should be MODIFIED (cleaned but not necessarily removed)
+  { tag: '00080020', tagName: 'Study Date', action: 'MODIFY' },
+  { tag: '00080021', tagName: 'Series Date', action: 'MODIFY' },
+  { tag: '00080022', tagName: 'Acquisition Date', action: 'MODIFY' },
+  { tag: '00080023', tagName: 'Content Date', action: 'MODIFY' },
+  { tag: '00080030', tagName: 'Study Time', action: 'MODIFY' },
+  { tag: '00080031', tagName: 'Series Time', action: 'MODIFY' },
+  { tag: '00080032', tagName: 'Acquisition Time', action: 'MODIFY' },
+  { tag: '00080033', tagName: 'Content Time', action: 'MODIFY' },
+];
+
 export interface AnonymizationOptions {
   script?: string;
   patientId?: string;
   patientName?: string;
   enablePixelCheck?: boolean;
+  extractBasicProfileTags?: boolean;
 }
 
 export class DicomAnonymizer {
@@ -65,7 +122,7 @@ export class DicomAnonymizer {
     file: File,
     options?: AnonymizationOptions,
     onProgress?: (message: string) => void
-  ): Promise<{ blob: Blob; changes: AnonymizationChange[]; warnings: string[] }> {
+  ): Promise<{ blob: Blob; changes: AnonymizationChange[]; warnings: string[]; basicProfileTagValues?: BasicProfileTagValue[] }> {
     const warnings: string[] = [];
 
     try {
@@ -80,6 +137,12 @@ export class DicomAnonymizer {
       const { DicomMessage } = dcmjs.data;
       const dicomDict = DicomMessage.readFile(arrayBuffer);
       const originalDataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(dicomDict.dict);
+
+      // Extract basic profile tag values if requested
+      let basicProfileTagValues: BasicProfileTagValue[] | undefined;
+      if (options?.extractBasicProfileTags) {
+        basicProfileTagValues = this.extractBasicProfileTagValues(file.name, originalDataset);
+      }
 
       // Use custom script or default
       let script = options?.script || DEFAULT_ANONYMIZATION_SCRIPT;
@@ -141,11 +204,86 @@ export class DicomAnonymizer {
 
       onProgress?.('Anonymization complete');
 
-      return { blob, changes, warnings };
+      return { blob, changes, warnings, basicProfileTagValues };
     } catch (error) {
       console.error('Error anonymizing DICOM file:', error);
       throw new Error(`Failed to anonymize ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Extracts basic profile tag values from a DICOM dataset
+   */
+  private extractBasicProfileTagValues(fileName: string, dataset: any): BasicProfileTagValue[] {
+    const tagValues: BasicProfileTagValue[] = [];
+
+    for (const profileTag of BASIC_PROFILE_TAGS) {
+      const value = this.getTagValueByHex(dataset, profileTag.tag);
+      if (value) {
+        tagValues.push({
+          tag: `(${profileTag.tag.substring(0, 4)},${profileTag.tag.substring(4)})`,
+          tagName: profileTag.tagName,
+          value,
+          fileName,
+        });
+      }
+    }
+
+    return tagValues;
+  }
+
+  /**
+   * Gets a tag value from a dataset by hex tag
+   */
+  private getTagValueByHex(dataset: any, hexTag: string): string {
+    // Map hex tag to naturalized field name
+    const hexToNameMap: Record<string, string> = {
+      '00080012': 'InstanceCreationDate',
+      '00080013': 'InstanceCreationTime',
+      '00080020': 'StudyDate',
+      '00080021': 'SeriesDate',
+      '00080022': 'AcquisitionDate',
+      '00080023': 'ContentDate',
+      '00080030': 'StudyTime',
+      '00080031': 'SeriesTime',
+      '00080032': 'AcquisitionTime',
+      '00080033': 'ContentTime',
+      '00080050': 'AccessionNumber',
+      '00080080': 'InstitutionName',
+      '00080081': 'InstitutionAddress',
+      '00080090': 'ReferringPhysicianName',
+      '00081010': 'StationName',
+      '00081030': 'StudyDescription',
+      '00081040': 'InstitutionalDepartmentName',
+      '00081048': 'PhysiciansOfRecord',
+      '00081050': 'PerformingPhysicianName',
+      '00081060': 'NameOfPhysiciansReadingStudy',
+      '00081070': 'OperatorsName',
+      '00100010': 'PatientName',
+      '00100020': 'PatientID',
+      '00100030': 'PatientBirthDate',
+      '00100032': 'PatientBirthTime',
+      '00101000': 'OtherPatientIDs',
+      '00101001': 'OtherPatientNames',
+      '00101010': 'PatientAge',
+      '00101020': 'PatientSize',
+      '00101030': 'PatientWeight',
+      '00101040': 'PatientAddress',
+      '00102154': 'PatientTelephoneNumbers',
+      '00104000': 'PatientComments',
+      '00181000': 'DeviceSerialNumber',
+      '00181030': 'ProtocolName',
+      '00204000': 'ImageComments',
+      '00321032': 'RequestingPhysician',
+      '00324000': 'StudyComments',
+    };
+
+    const fieldName = hexToNameMap[hexTag];
+    if (fieldName) {
+      return this.getTagValue(dataset, fieldName);
+    }
+
+    return '';
   }
 
   /**
@@ -396,10 +534,11 @@ export class DicomAnonymizer {
     files: File[],
     options?: AnonymizationOptions,
     onProgress?: (current: number, total: number, message: string) => void
-  ): Promise<{ blobs: Blob[]; changes: AnonymizationChange[]; warnings: string[] }> {
+  ): Promise<{ blobs: Blob[]; changes: AnonymizationChange[]; warnings: string[]; basicProfileTagValues?: BasicProfileTagValue[] }> {
     const anonymizedFiles: Blob[] = [];
     const allChanges: AnonymizationChange[] = [];
     const allWarnings: string[] = [];
+    const allBasicProfileTagValues: BasicProfileTagValue[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -412,9 +551,17 @@ export class DicomAnonymizer {
       anonymizedFiles.push(result.blob);
       allChanges.push(...result.changes);
       allWarnings.push(...result.warnings);
+      if (result.basicProfileTagValues) {
+        allBasicProfileTagValues.push(...result.basicProfileTagValues);
+      }
     }
 
-    return { blobs: anonymizedFiles, changes: allChanges, warnings: allWarnings };
+    return {
+      blobs: anonymizedFiles,
+      changes: allChanges,
+      warnings: allWarnings,
+      basicProfileTagValues: allBasicProfileTagValues.length > 0 ? allBasicProfileTagValues : undefined,
+    };
   }
 
   /**
