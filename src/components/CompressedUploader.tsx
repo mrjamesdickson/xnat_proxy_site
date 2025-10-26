@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useXnat } from '../contexts/XnatContext';
@@ -38,6 +38,10 @@ export function CompressedUploader() {
   const [isManifestMaximized, setIsManifestMaximized] = useState(false);
   const [manifestSortField, setManifestSortField] = useState<'fileName' | 'tag' | 'tagName'>('fileName');
   const [manifestSortDirection, setManifestSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
+  const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
+  const [showUnprocessedTags, setShowUnprocessedTags] = useState(false);
+  const [acknowledgeRisk, setAcknowledgeRisk] = useState(false);
 
   const manifestTotalFiles = anonymizationManifest?.totalFiles ?? 0;
   const manifestChanges = anonymizationManifest?.changes ?? [];
@@ -45,13 +49,19 @@ export function CompressedUploader() {
   const isManifestUploadBlocked = manifestTotalFiles > 0 && !manifestHasChanges;
 
   // Fetch available projects
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useQuery({
     queryKey: ['projects-list'],
     queryFn: async () => {
       if (!client) return [];
       return await client.getProjects();
     },
+    enabled: !!client,
   });
+
+  // Debug projects
+  useEffect(() => {
+    console.log('Projects query:', { projects, projectsLoading, projectsError, hasClient: !!client });
+  }, [projects, projectsLoading, projectsError, client]);
 
   // Fetch anonymization script when project changes or on mount
   useEffect(() => {
@@ -104,6 +114,219 @@ export function CompressedUploader() {
     }
 
     return null;
+  };
+
+  // DICOM Basic Confidentiality Profile Required Tags (PS3.15 Annex E)
+  const REQUIRED_REMOVED_TAGS = new Set([
+    '(0008,0012)', // Instance Creation Date
+    '(0008,0013)', // Instance Creation Time
+    '(0008,0050)', // Accession Number
+    '(0008,0080)', // Institution Name
+    '(0008,0081)', // Institution Address
+    '(0008,0090)', // Referring Physician's Name
+    '(0008,0092)', // Referring Physician's Address
+    '(0008,0094)', // Referring Physician's Telephone
+    '(0008,1010)', // Station Name
+    '(0008,1030)', // Study Description
+    '(0008,1040)', // Institutional Department Name
+    '(0008,1048)', // Physician(s) of Record
+    '(0008,1050)', // Performing Physician's Name
+    '(0008,1060)', // Name of Physician(s) Reading Study
+    '(0008,1070)', // Operators' Name
+    '(0008,1080)', // Admitting Diagnoses Description
+    '(0010,0030)', // Patient's Birth Date
+    '(0010,0032)', // Patient's Birth Time
+    '(0010,1000)', // Other Patient IDs
+    '(0010,1001)', // Other Patient Names
+    '(0010,1005)', // Patient's Birth Name
+    '(0010,1010)', // Patient's Age
+    '(0010,1020)', // Patient's Size
+    '(0010,1030)', // Patient's Weight
+    '(0010,1040)', // Patient's Address
+    '(0010,1060)', // Patient's Mother's Birth Name
+    '(0010,1080)', // Military Rank
+    '(0010,1081)', // Branch of Service
+    '(0010,1090)', // Medical Record Locator
+    '(0010,2154)', // Patient's Telephone Numbers
+    '(0010,2160)', // Ethnic Group
+    '(0010,2180)', // Occupation
+    '(0010,21B0)', // Additional Patient History
+    '(0010,21D0)', // Last Menstrual Date
+    '(0010,4000)', // Patient Comments
+    '(0018,1000)', // Device Serial Number
+    '(0018,1030)', // Protocol Name
+    '(0020,4000)', // Image Comments
+    '(0032,1032)', // Requesting Physician
+    '(0032,1060)', // Requested Procedure Description
+    '(0032,4000)', // Study Comments
+    '(0040,0254)', // Performed Procedure Step Description
+    '(0040,0280)', // Comments on Performed Procedure Step
+  ]);
+
+  const REQUIRED_MODIFIED_TAGS = new Set([
+    '(0010,0010)', // Patient Name - must be modified
+    '(0010,0020)', // Patient ID - must be modified
+  ]);
+
+  // Aggregate changes by tag for summary view
+  const getTagSummary = () => {
+    if (!anonymizationManifest) return [];
+
+    const tagMap = new Map<string, {
+      tagName: string;
+      tag: string;
+      action: 'UPDATED' | 'REMOVED' | 'UNCHANGED';
+      fileCount: number;
+      sampleOriginal: string;
+      sampleNew: string;
+      allOriginalValues: Set<string>;
+      allNewValues: Set<string>;
+      complianceIssue?: 'SHOULD_BE_REMOVED' | 'SHOULD_BE_MODIFIED';
+    }>();
+
+    anonymizationManifest.changes.forEach(change => {
+      const key = change.tag;
+
+      if (!tagMap.has(key)) {
+        // Determine action type
+        let action: 'UPDATED' | 'REMOVED' | 'UNCHANGED';
+        if (change.newValue === '' || change.newValue === '[REMOVED]') {
+          action = 'REMOVED';
+        } else if (change.originalValue === change.newValue) {
+          action = 'UNCHANGED';
+        } else {
+          action = 'UPDATED';
+        }
+
+        // Check compliance with DICOM Basic Profile
+        let complianceIssue: 'SHOULD_BE_REMOVED' | 'SHOULD_BE_MODIFIED' | undefined;
+        if (action === 'UNCHANGED') {
+          if (REQUIRED_REMOVED_TAGS.has(change.tag)) {
+            complianceIssue = 'SHOULD_BE_REMOVED';
+          } else if (REQUIRED_MODIFIED_TAGS.has(change.tag)) {
+            complianceIssue = 'SHOULD_BE_MODIFIED';
+          }
+        }
+
+        tagMap.set(key, {
+          tagName: change.tagName,
+          tag: change.tag,
+          action,
+          fileCount: 1,
+          sampleOriginal: change.originalValue,
+          sampleNew: change.newValue,
+          allOriginalValues: new Set([change.originalValue]),
+          allNewValues: new Set([change.newValue]),
+          complianceIssue,
+        });
+      } else {
+        const existing = tagMap.get(key)!;
+        existing.fileCount++;
+        existing.allOriginalValues.add(change.originalValue);
+        existing.allNewValues.add(change.newValue);
+      }
+    });
+
+    // Add unprocessed basic profile tags as UNCHANGED with compliance issues
+    const processedTags = new Set(tagMap.keys());
+
+    // Map tag codes to names
+    const getTagName = (tag: string): string => {
+      const tagNames: Record<string, string> = {
+        '(0008,0012)': 'Instance Creation Date',
+        '(0008,0013)': 'Instance Creation Time',
+        '(0008,0050)': 'Accession Number',
+        '(0008,0080)': 'Institution Name',
+        '(0008,0081)': 'Institution Address',
+        '(0008,0090)': 'Referring Physician Name',
+        '(0008,1010)': 'Station Name',
+        '(0008,1030)': 'Study Description',
+        '(0008,1040)': 'Institutional Department Name',
+        '(0008,1048)': 'Physician(s) of Record',
+        '(0008,1050)': 'Performing Physician Name',
+        '(0008,1060)': 'Name of Physician(s) Reading Study',
+        '(0008,1070)': 'Operators Name',
+        '(0010,0010)': 'Patient Name',
+        '(0010,0020)': 'Patient ID',
+        '(0010,0030)': 'Patient Birth Date',
+        '(0010,0032)': 'Patient Birth Time',
+        '(0010,1000)': 'Other Patient IDs',
+        '(0010,1001)': 'Other Patient Names',
+        '(0010,1010)': 'Patient Age',
+        '(0010,1020)': 'Patient Size',
+        '(0010,1030)': 'Patient Weight',
+        '(0010,1040)': 'Patient Address',
+        '(0010,2154)': 'Patient Telephone Numbers',
+        '(0010,4000)': 'Patient Comments',
+        '(0018,1000)': 'Device Serial Number',
+        '(0018,1030)': 'Protocol Name',
+        '(0020,4000)': 'Image Comments',
+        '(0032,1032)': 'Requesting Physician',
+        '(0032,4000)': 'Study Comments',
+      };
+      return tagNames[tag] || tag;
+    };
+
+    // Create a map of basic profile tag values by tag
+    const basicProfileValuesByTag = new Map<string, string[]>();
+    if (anonymizationManifest.basicProfileTagValues) {
+      for (const tagValue of anonymizationManifest.basicProfileTagValues) {
+        if (!basicProfileValuesByTag.has(tagValue.tag)) {
+          basicProfileValuesByTag.set(tagValue.tag, []);
+        }
+        basicProfileValuesByTag.get(tagValue.tag)!.push(tagValue.value);
+      }
+    }
+
+    // Add unprocessed REQUIRED_REMOVED_TAGS
+    for (const tag of REQUIRED_REMOVED_TAGS) {
+      if (!processedTags.has(tag)) {
+        const values = basicProfileValuesByTag.get(tag) || [];
+        const sampleValue = values.length > 0 ? values[0] : '[Not present in files]';
+        const allValues = new Set(values.length > 0 ? values : ['[Not present in files]']);
+
+        tagMap.set(tag, {
+          tagName: getTagName(tag),
+          tag,
+          action: 'UNCHANGED',
+          fileCount: values.length,
+          sampleOriginal: sampleValue,
+          sampleNew: sampleValue,
+          allOriginalValues: allValues,
+          allNewValues: allValues,
+          complianceIssue: values.length > 0 ? 'SHOULD_BE_REMOVED' : undefined,
+        });
+      }
+    }
+
+    // Add unprocessed REQUIRED_MODIFIED_TAGS
+    for (const tag of REQUIRED_MODIFIED_TAGS) {
+      if (!processedTags.has(tag)) {
+        const values = basicProfileValuesByTag.get(tag) || [];
+        const sampleValue = values.length > 0 ? values[0] : '[Not present in files]';
+        const allValues = new Set(values.length > 0 ? values : ['[Not present in files]']);
+
+        tagMap.set(tag, {
+          tagName: getTagName(tag),
+          tag,
+          action: 'UNCHANGED',
+          fileCount: values.length,
+          sampleOriginal: sampleValue,
+          sampleNew: sampleValue,
+          allOriginalValues: allValues,
+          allNewValues: allValues,
+          complianceIssue: values.length > 0 ? 'SHOULD_BE_MODIFIED' : undefined,
+        });
+      }
+    }
+
+    // Convert to array and sort: REMOVED, UPDATED, UNCHANGED
+    const sortOrder = { 'REMOVED': 0, 'UPDATED': 1, 'UNCHANGED': 2 };
+    return Array.from(tagMap.values()).sort((a, b) => {
+      const orderDiff = sortOrder[a.action] - sortOrder[b.action];
+      if (orderDiff !== 0) return orderDiff;
+      return a.tagName.localeCompare(b.tagName);
+    });
   };
 
   const downloadManifest = () => {
@@ -165,6 +388,7 @@ export function CompressedUploader() {
     const anonymizedResults: { file: File; blob: Blob }[] = [];
     const allChanges: AnonymizationManifest['changes'] = [];
     const allWarnings: string[] = [];
+    const allBasicProfileTagValues: any[] = [];
 
     // Get the anonymization script for the selected project from XNAT
     let script = anonymizationScript || DEFAULT_ANONYMIZATION_SCRIPT;
@@ -183,10 +407,10 @@ export function CompressedUploader() {
       setProcessingMessage(`Anonymizing ${i + 1}/${dicomFiles.length}: ${file.name}...`);
 
       try {
-        // Use dicomedit with XNAT script
+        // Use dicomedit with XNAT script and extract basic profile tags
         const result = await dicomAnonymizer.anonymizeFile(
           file,
-          { script, enablePixelCheck },
+          { script, enablePixelCheck, extractBasicProfileTags: true },
           (msg) => {
             setProcessingMessage(`Anonymizing ${i + 1}/${dicomFiles.length}: ${msg}`);
           }
@@ -195,6 +419,9 @@ export function CompressedUploader() {
         anonymizedResults.push({ file, blob: result.blob });
         allChanges.push(...result.changes);
         allWarnings.push(...result.warnings);
+        if (result.basicProfileTagValues) {
+          allBasicProfileTagValues.push(...result.basicProfileTagValues);
+        }
       } catch (error) {
         console.error(`Failed to anonymize ${file.name}:`, error);
         throw new Error(`Failed to anonymize ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -207,6 +434,7 @@ export function CompressedUploader() {
       totalFiles: dicomFiles.length,
       changes: allChanges,
       warnings: allWarnings,
+      basicProfileTagValues: allBasicProfileTagValues.length > 0 ? allBasicProfileTagValues : undefined,
     });
 
     // Warn if no changes were detected - this likely means anonymization failed
@@ -257,6 +485,7 @@ export function CompressedUploader() {
     let skippedCount = 0;
     const allChanges: AnonymizationManifest['changes'] = [];
     const allWarnings: string[] = [];
+    const allBasicProfileTagValues: any[] = [];
 
     // Count DICOM files (excluding system files)
     for (const filename of files) {
@@ -294,10 +523,13 @@ export function CompressedUploader() {
           const arrayBuffer = await file.async('arraybuffer');
           const dcmFile = new File([arrayBuffer], filename, { type: 'application/dicom' });
 
-          // Anonymize using dicomedit with XNAT script
-          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck });
+          // Anonymize using dicomedit with XNAT script and extract basic profile tags
+          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck, extractBasicProfileTags: true });
           allChanges.push(...result.changes);
           allWarnings.push(...result.warnings);
+          if (result.basicProfileTagValues) {
+            allBasicProfileTagValues.push(...result.basicProfileTagValues);
+          }
 
           // Add to new zip
           const anonymizedBuffer = await result.blob.arrayBuffer();
@@ -337,6 +569,7 @@ export function CompressedUploader() {
       totalFiles: dicomCount,
       changes: allChanges,
       warnings: allWarnings,
+      basicProfileTagValues: allBasicProfileTagValues.length > 0 ? allBasicProfileTagValues : undefined,
     });
 
     // Warn if no changes were detected - this likely means anonymization failed
@@ -389,6 +622,7 @@ export function CompressedUploader() {
     let skippedCount = 0;
     const allChanges: AnonymizationManifest['changes'] = [];
     const allWarnings: string[] = [];
+    const allBasicProfileTagValues: any[] = [];
 
     // Count DICOM files (excluding system files)
     for (const { name } of tarFiles) {
@@ -416,10 +650,13 @@ export function CompressedUploader() {
         try {
           const dcmFile = new File([data], name, { type: 'application/dicom' });
 
-          // Anonymize using dicomedit with XNAT script
-          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck });
+          // Anonymize using dicomedit with XNAT script and extract basic profile tags
+          const result = await dicomAnonymizer.anonymizeFile(dcmFile, { script, enablePixelCheck, extractBasicProfileTags: true });
           allChanges.push(...result.changes);
           allWarnings.push(...result.warnings);
+          if (result.basicProfileTagValues) {
+            allBasicProfileTagValues.push(...result.basicProfileTagValues);
+          }
 
           // Add to new zip
           const anonymizedBuffer = await result.blob.arrayBuffer();
@@ -457,6 +694,7 @@ export function CompressedUploader() {
       totalFiles: dicomCount,
       changes: allChanges,
       warnings: allWarnings,
+      basicProfileTagValues: allBasicProfileTagValues.length > 0 ? allBasicProfileTagValues : undefined,
     });
 
     // Warn if no changes were detected
@@ -882,6 +1120,20 @@ export function CompressedUploader() {
 
     if (!client || !selectedFile) return;
 
+    // If we have a manifest with changes, show confirmation dialog first
+    if (anonymizationManifest && manifestHasChanges) {
+      setAcknowledgeRisk(false); // Reset checkbox when opening dialog
+      setShowConfirmationDialog(true);
+      return;
+    }
+
+    // Otherwise proceed directly (no anonymization happened)
+    await proceedWithUpload();
+  };
+
+  const proceedWithUpload = async () => {
+    if (!client || !selectedFile) return;
+
     try {
       // Generate upload ID
       const uploadID = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1001,17 +1253,24 @@ export function CompressedUploader() {
               id="project"
               value={selectedProject}
               onChange={(e) => setSelectedProject(e.target.value)}
-              disabled={isUploading}
+              disabled={isUploading || projectsLoading}
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
             >
-              <option value="">Select a project...</option>
+              <option value="">
+                {projectsLoading ? 'Loading projects...' : projectsError ? 'Error loading projects' : 'Select a project...'}
+              </option>
               {projects.map((project, index) => (
                 <option key={project.id || `project-${index}`} value={project.id}>
                   {project.name || project.id}
                 </option>
               ))}
             </select>
+            {projectsError && (
+              <p className="text-xs text-red-600 mt-1">
+                Failed to load projects. Please refresh the page.
+              </p>
+            )}
           </div>
 
           {/* Ignore Unparsable Files */}
@@ -1516,6 +1775,529 @@ export function CompressedUploader() {
           </div>
         </div>
       )}
+
+      {/* Anonymization Confirmation Dialog - shown before upload */}
+      {showConfirmationDialog && anonymizationManifest && manifestHasChanges && (() => {
+        const tagSummary = getTagSummary();
+        const removedTags = tagSummary.filter(t => t.action === 'REMOVED');
+        const updatedTags = tagSummary.filter(t => t.action === 'UPDATED');
+        const unchangedTags = tagSummary.filter(t => t.action === 'UNCHANGED');
+        const complianceIssues = tagSummary.filter(t => t.complianceIssue);
+
+        // Tags that were properly handled per DICOM profile
+        const compliantRemoved = removedTags.filter(t => REQUIRED_REMOVED_TAGS.has(t.tag));
+        const compliantModified = updatedTags.filter(t => REQUIRED_MODIFIED_TAGS.has(t.tag));
+
+        // Find DICOM profile tags that were NOT in the anonymization manifest (not processed)
+        const processedTags = new Set(tagSummary.map(t => t.tag));
+        const unprocessedRequiredTags = Array.from(REQUIRED_REMOVED_TAGS)
+          .filter(tag => !processedTags.has(tag));
+        const unprocessedModifiedTags = Array.from(REQUIRED_MODIFIED_TAGS)
+          .filter(tag => !processedTags.has(tag));
+        const totalUnprocessed = unprocessedRequiredTags.length + unprocessedModifiedTags.length;
+
+        // CRITICAL: Tags that are required but weren't processed are potential compliance issues
+        // We can't tell if they weren't in the files or if the script missed them
+        const potentialComplianceIssues = complianceIssues.length > 0 || totalUnprocessed > 0;
+
+        // Block upload if there are compliance issues (tags with PHI that should have been removed/modified)
+        const hasComplianceIssues = complianceIssues.length > 0;
+
+        // Map tag codes to names (subset - could be extended)
+        const getTagName = (tag: string) => {
+          const tagNames: Record<string, string> = {
+            '(0008,0012)': 'Instance Creation Date',
+            '(0008,0013)': 'Instance Creation Time',
+            '(0008,0050)': 'Accession Number',
+            '(0008,0080)': 'Institution Name',
+            '(0008,0081)': 'Institution Address',
+            '(0008,0090)': 'Referring Physician Name',
+            '(0008,1010)': 'Station Name',
+            '(0008,1030)': 'Study Description',
+            '(0008,1040)': 'Institutional Department Name',
+            '(0008,1048)': 'Physician(s) of Record',
+            '(0008,1050)': 'Performing Physician Name',
+            '(0008,1060)': 'Name of Physician(s) Reading Study',
+            '(0008,1070)': 'Operators Name',
+            '(0010,0010)': 'Patient Name',
+            '(0010,0020)': 'Patient ID',
+            '(0010,0030)': 'Patient Birth Date',
+            '(0010,0032)': 'Patient Birth Time',
+            '(0010,1000)': 'Other Patient IDs',
+            '(0010,1001)': 'Other Patient Names',
+            '(0010,1010)': 'Patient Age',
+            '(0010,1020)': 'Patient Size',
+            '(0010,1030)': 'Patient Weight',
+            '(0010,1040)': 'Patient Address',
+            '(0010,2154)': 'Patient Telephone Numbers',
+            '(0010,4000)': 'Patient Comments',
+            '(0018,1000)': 'Device Serial Number',
+            '(0018,1030)': 'Protocol Name',
+            '(0020,4000)': 'Image Comments',
+            '(0032,1032)': 'Requesting Physician',
+            '(0032,4000)': 'Study Comments',
+          };
+          return tagNames[tag] || tag;
+        };
+
+        return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Shield className="w-6 h-6 text-green-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Review Anonymization Changes</h3>
+              </div>
+              <button
+                onClick={() => setShowConfirmationDialog(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Confirmation Message */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-medium">Anonymization Successful</p>
+                    <p className="mt-1">
+                      Your DICOM files have been anonymized. Please review the changes below before uploading to XNAT.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* DICOM Compliance Success */}
+              {!potentialComplianceIssues && (compliantRemoved.length > 0 || compliantModified.length > 0) && (
+                <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-green-900 font-bold mb-2">✅ DICOM Profile Compliance Verified</p>
+                      <p className="text-sm text-green-800 mb-2">
+                        All required PHI tags from DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E) have been properly handled:
+                      </p>
+                      <div className="text-xs text-green-700 space-y-1">
+                        {compliantRemoved.length > 0 && (
+                          <p>• <strong>{compliantRemoved.length}</strong> required tag(s) successfully removed</p>
+                        )}
+                        {compliantModified.length > 0 && (
+                          <p>• <strong>{compliantModified.length}</strong> required tag(s) successfully modified</p>
+                        )}
+                        <p className="mt-2 italic">• All {REQUIRED_REMOVED_TAGS.size + REQUIRED_MODIFIED_TAGS.size} required profile tags accounted for</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DICOM Compliance Issues */}
+              {complianceIssues.length > 0 && (
+                <div className="bg-red-50 border-2 border-red-500 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-red-900 font-bold mb-2">❌ DICOM Compliance Issues Detected</p>
+                      <p className="text-sm text-red-800 mb-2">
+                        <strong>{complianceIssues.length}</strong> tag(s) do not comply with DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E).
+                        These tags contain PHI and should be removed or modified.
+                      </p>
+                      <p className="text-xs text-red-700">
+                        Tags flagged in red below must be addressed before uploading to ensure HIPAA compliance.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pixel Data Warnings */}
+              {anonymizationManifest.warnings && anonymizationManifest.warnings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-amber-900 font-semibold mb-2">⚠️ Pixel Data Warnings</p>
+                      <p className="text-xs text-amber-700">
+                        {anonymizationManifest.warnings.length} file(s) may contain PHI burned into pixel data.
+                        DICOM tag anonymization cannot remove burned-in text. Manual review recommended.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Unprocessed DICOM Profile Tags (expandable) - WARNING */}
+              {totalUnprocessed > 0 && (
+                <div className="bg-orange-50 border-2 border-orange-500 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setShowUnprocessedTags(!showUnprocessedTags)}
+                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-orange-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-orange-600" />
+                      <div className="text-left">
+                        <p className="text-orange-900 font-bold text-sm">
+                          ⚠️ {totalUnprocessed} DICOM Profile Tag(s) Not Processed by Anonymization Script
+                        </p>
+                        <p className="text-xs text-orange-800">
+                          <strong>WARNING:</strong> These required tags were not in your anonymization script.
+                          If they exist in your files, they may contain PHI! (click to view)
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-orange-600 text-lg font-bold">
+                      {showUnprocessedTags ? '▼' : '▶'}
+                    </span>
+                  </button>
+
+                  {showUnprocessedTags && (
+                    <div className="px-4 py-3 border-t border-orange-300 bg-orange-50">
+                      <div className="text-xs space-y-3">
+                        <p className="text-orange-900 font-semibold">
+                          ⚠️ POTENTIAL COMPLIANCE ISSUE
+                        </p>
+                        <p className="text-orange-800">
+                          The following tags from DICOM PS3.15 Annex E were NOT processed by your anonymization script.
+                          This means if any of these tags exist in your original DICOM files, <strong>they may still contain PHI</strong>!
+                        </p>
+
+                        {unprocessedRequiredTags.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-orange-900 mb-2">
+                              Tags that should be removed ({unprocessedRequiredTags.length}):
+                            </p>
+                            <div className="grid grid-cols-2 gap-1 ml-4">
+                              {unprocessedRequiredTags.map((tag, i) => (
+                                <div key={i} className="text-orange-700 flex items-start gap-1">
+                                  <span className="text-orange-500">•</span>
+                                  <span className="font-mono text-xs">{tag}</span>
+                                  <span className="text-orange-600">- {getTagName(tag)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {unprocessedModifiedTags.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-orange-900 mb-2">
+                              Tags that should be modified ({unprocessedModifiedTags.length}):
+                            </p>
+                            <div className="ml-4 space-y-1">
+                              {unprocessedModifiedTags.map((tag, i) => (
+                                <div key={i} className="text-orange-700 flex items-start gap-1">
+                                  <span className="text-orange-500">•</span>
+                                  <span className="font-mono text-xs">{tag}</span>
+                                  <span className="text-orange-600">- {getTagName(tag)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="bg-orange-100 border border-orange-400 rounded p-2 mt-2">
+                          <p className="text-xs text-orange-900">
+                            <strong>Action Required:</strong> Review your anonymization script and verify these tags are either:
+                          </p>
+                          <ul className="text-xs text-orange-800 ml-4 mt-1 space-y-1">
+                            <li>• Not present in your original files (safe to proceed)</li>
+                            <li>• Added to your anonymization script before uploading (recommended)</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Summary */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-blue-600 font-medium">Total Files</p>
+                    <p className="text-blue-900 text-lg font-semibold">{manifestTotalFiles}</p>
+                  </div>
+                  <div>
+                    <p className="text-blue-600 font-medium">Unique Tags Modified</p>
+                    <p className="text-blue-900 text-lg font-semibold">{tagSummary.length} tags</p>
+                  </div>
+                  <div>
+                    <p className="text-blue-600 font-medium">Destination</p>
+                    <p className="text-blue-900 text-lg font-semibold capitalize">{destination}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tag-Based Summary */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <p className="text-sm font-medium text-gray-700">
+                    Tag Modifications ({tagSummary.length} unique tags across {manifestChanges.length} changes)
+                  </p>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tag Name</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sample Change</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Files</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {tagSummary.map((tag, index) => {
+                        const isExpanded = expandedTags.has(tag.tag);
+                        const hasMultipleValues = tag.allOriginalValues.size > 1 || tag.allNewValues.size > 1;
+                        const isCompliant = (REQUIRED_REMOVED_TAGS.has(tag.tag) && tag.action === 'REMOVED') ||
+                                           (REQUIRED_MODIFIED_TAGS.has(tag.tag) && tag.action === 'UPDATED');
+
+                        return (
+                          <React.Fragment key={index}>
+                            <tr className={
+                              tag.complianceIssue ? 'bg-red-50 hover:bg-red-100' :
+                              isCompliant ? 'bg-green-50 hover:bg-green-100' :
+                              'hover:bg-gray-50'
+                            }>
+                              <td className="px-4 py-2 text-xs text-gray-900 font-medium">
+                                <div className="flex items-center gap-1">
+                                  {hasMultipleValues && (
+                                    <button
+                                      onClick={() => {
+                                        const newExpanded = new Set(expandedTags);
+                                        if (isExpanded) {
+                                          newExpanded.delete(tag.tag);
+                                        } else {
+                                          newExpanded.add(tag.tag);
+                                        }
+                                        setExpandedTags(newExpanded);
+                                      }}
+                                      className="text-gray-400 hover:text-gray-600"
+                                    >
+                                      {isExpanded ? '▼' : '▶'}
+                                    </button>
+                                  )}
+                                  {tag.tagName}
+                                  {tag.complianceIssue && (
+                                    <span className="ml-2 text-red-600 font-bold">⚠️</span>
+                                  )}
+                                  {isCompliant && (
+                                    <span className="ml-2 text-green-600 font-bold">✓</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2 text-xs">
+                                {tag.complianceIssue ? (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1 text-red-700 font-bold">
+                                      ❌ {tag.complianceIssue === 'SHOULD_BE_REMOVED' ? 'MUST BE REMOVED' : 'MUST BE MODIFIED'}
+                                    </span>
+                                    {tag.fileCount > 0 && tag.sampleOriginal !== '[Not present in files]' ? (
+                                      <div className="bg-red-100 border border-red-300 rounded px-2 py-1">
+                                        <div className="text-red-900 font-semibold text-xs mb-0.5">Contains PHI:</div>
+                                        <div className="text-red-800 font-mono text-xs break-all">
+                                          "{tag.sampleOriginal || '(empty)'}"
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="bg-gray-100 border border-gray-300 rounded px-2 py-1">
+                                        <div className="text-gray-700 text-xs">
+                                          Tag not present in files - OK
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : isCompliant ? (
+                                  <>
+                                    {tag.action === 'REMOVED' && (
+                                      <span className="inline-flex items-center gap-1 text-green-700 font-semibold">
+                                        🗑️ REMOVED (Compliant)
+                                      </span>
+                                    )}
+                                    {tag.action === 'UPDATED' && (
+                                      <span className="inline-flex items-center gap-1 text-green-700 font-semibold">
+                                        🔴 UPDATED (Compliant)
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {tag.action === 'REMOVED' && (
+                                      <span className="inline-flex items-center gap-1 text-red-700">
+                                        🗑️ REMOVED
+                                      </span>
+                                    )}
+                                    {tag.action === 'UPDATED' && (
+                                      <span className="inline-flex items-center gap-1 text-orange-700">
+                                        🔴 UPDATED
+                                      </span>
+                                    )}
+                                    {tag.action === 'UNCHANGED' && (
+                                      <span className="inline-flex items-center gap-1 text-gray-500">
+                                        ⚪ UNCHANGED
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-gray-700">
+                                {tag.sampleOriginal !== '[Not present in files]' ? (
+                                  <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-1 max-w-md">
+                                      <span className={`truncate ${tag.complianceIssue ? 'font-semibold text-red-700' : ''}`} title={tag.sampleOriginal}>
+                                        {tag.sampleOriginal || <span className="text-gray-400 italic">(empty)</span>}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="truncate" title={tag.sampleNew}>
+                                        {tag.sampleNew || <span className="text-gray-400 italic">[REMOVED]</span>}
+                                      </span>
+                                      {hasMultipleValues && (
+                                        <span className="ml-1 text-blue-600 text-xs">
+                                          (+{Math.max(tag.allOriginalValues.size, tag.allNewValues.size) - 1} more)
+                                        </span>
+                                      )}
+                                    </div>
+                                    {tag.complianceIssue && tag.action === 'UNCHANGED' && (
+                                      <div className="text-red-600 font-semibold text-xs">
+                                        ⚠️ Value unchanged - still contains PHI
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-500 italic">Tag not present in any files</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-gray-600">
+                                {tag.sampleOriginal !== '[Not present in files]' ? tag.fileCount : <span className="text-gray-500">—</span>}
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={4} className="px-4 py-3 bg-gray-50">
+                                  <div className="text-xs space-y-2">
+                                    <p className="font-medium text-gray-700">All unique values for {tag.tagName}:</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <p className="text-gray-500 font-medium mb-1">Original values:</p>
+                                        <div className="space-y-1">
+                                          {Array.from(tag.allOriginalValues).map((val, i) => (
+                                            <div key={i} className="flex items-center gap-2 text-gray-700 ml-2">
+                                              <span className="text-gray-400">•</span>
+                                              <span>{val || <span className="italic">(empty)</span>}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500 font-medium mb-1">Anonymized values:</p>
+                                        <div className="space-y-1">
+                                          {Array.from(tag.allNewValues).map((val, i) => (
+                                            <div key={i} className="flex items-center gap-2 text-gray-700 ml-2">
+                                              <span className="text-gray-400">•</span>
+                                              <span>{val || <span className="italic">[REMOVED]</span>}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="bg-gray-50 px-4 py-2 border-t border-gray-200">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-4">
+                      <span className="text-gray-600">
+                        🗑️ <strong>{removedTags.length}</strong> removed
+                      </span>
+                      <span className="text-gray-600">
+                        🔴 <strong>{updatedTags.length}</strong> updated
+                      </span>
+                      <span className="text-gray-600">
+                        ⚪ <strong>{unchangedTags.length}</strong> unchanged
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowConfirmationDialog(false);
+                        setShowManifestDialog(true);
+                      }}
+                      className="text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      View file-by-file details
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="mt-6">
+              {hasComplianceIssues && (
+                <div className="mb-3 bg-red-50 border-2 border-red-500 rounded p-3">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acknowledgeRisk}
+                      onChange={(e) => setAcknowledgeRisk(e.target.checked)}
+                      className="mt-1 rounded border-red-300 text-red-600 focus:ring-red-500"
+                    />
+                    <span className="text-sm text-red-900">
+                      <strong>I acknowledge</strong> that the DICOM files contain PHI in tags that were not properly anonymized.
+                      I understand this violates HIPAA compliance and accept full responsibility for uploading files with PHI.
+                    </span>
+                  </label>
+                </div>
+              )}
+              {hasComplianceIssues && !acknowledgeRisk && (
+                <div className="mb-3 bg-red-100 border border-red-400 rounded p-2">
+                  <p className="text-xs text-red-900">
+                    ⚠️ <strong>Upload blocked:</strong> Please review the compliance issues above and check the acknowledgment box to proceed.
+                  </p>
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowConfirmationDialog(false);
+                    setAcknowledgeRisk(false);
+                  }}
+                  className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConfirmationDialog(false);
+                    setAcknowledgeRisk(false);
+                    proceedWithUpload();
+                  }}
+                  disabled={hasComplianceIssues && !acknowledgeRisk}
+                  className={`px-6 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                    hasComplianceIssues && !acknowledgeRisk
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                  title={hasComplianceIssues && !acknowledgeRisk ? 'Please acknowledge the compliance risk before uploading' : ''}
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  Confirm & Upload to {destination === 'prearchive' ? 'Prearchive' : 'Archive'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Anonymization Manifest Dialog */}
       {showManifestDialog && anonymizationManifest && (
