@@ -3342,6 +3342,30 @@ export class XnatApiClient {
     return await this.getDefaultAnonymizationScript();
   }
 
+  // User Storage methods
+  async getUserStorage(): Promise<Record<string, unknown>> {
+    try {
+      const response = await this.client.get('/xapi/storage/user');
+      return response.data || {};
+    } catch (error) {
+      console.error('Error fetching user storage:', error);
+      return {};
+    }
+  }
+
+  async setUserStorage(data: Record<string, unknown>): Promise<void> {
+    try {
+      await this.client.post('/xapi/storage/user', data, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+    } catch (error) {
+      console.error('Error setting user storage:', error);
+      throw error;
+    }
+  }
+
   // Utility methods
   getConfig(): XnatConfig {
     return { ...this.config };

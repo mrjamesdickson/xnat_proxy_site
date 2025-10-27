@@ -1902,8 +1902,8 @@ export function CompressedUploader() {
                     <div className="flex-1">
                       <p className="text-red-900 font-bold mb-2">❌ DICOM Compliance Issues Detected</p>
                       <p className="text-sm text-red-800 mb-2">
-                        <strong>{complianceIssues.length}</strong> tag(s) do not comply with DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E).
-                        These tags contain PHI and should be removed or modified.
+                        <strong>{complianceIssues.length}</strong> tag(s) may not comply with DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E).
+                        These tags may contain PHI and should be removed or modified.
                       </p>
                       <p className="text-xs text-red-700">
                         Tags flagged in red below must be addressed before uploading to ensure HIPAA compliance.

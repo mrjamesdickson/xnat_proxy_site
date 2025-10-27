@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
+import { useMorpheusPreferences } from '../contexts/MorpheusPreferencesContext';
 import {
   FileImage,
   Search,
@@ -28,6 +29,7 @@ import { DateFilterModal } from './DateFilterModal';
 
 export function Experiments() {
   const { client, config } = useXnat();
+  const { getLayout, setLayout } = useMorpheusPreferences();
   const [searchParams] = useSearchParams();
   const { project: routeProject, subject: routeSubject } = useParams<{
     project: string;
@@ -38,7 +40,7 @@ export function Experiments() {
   const [selectedModality, setSelectedModality] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(12);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
+  const viewMode = getLayout('experiments');
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
   const [requestComments, setRequestComments] = useState('');
@@ -378,7 +380,7 @@ export function Experiments() {
             <div className="inline-flex rounded-md shadow-sm" role="group">
               <button
                 type="button"
-                onClick={() => setViewMode('grid')}
+                onClick={() => setLayout('experiments', 'grid')}
                 className={clsx(
                   'px-4 py-2 text-sm font-medium rounded-l-lg border',
                   viewMode === 'grid'
@@ -391,7 +393,7 @@ export function Experiments() {
               </button>
               <button
                 type="button"
-                onClick={() => setViewMode('table')}
+                onClick={() => setLayout('experiments', 'table')}
                 className={clsx(
                   'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
                   viewMode === 'table'
@@ -747,19 +749,68 @@ export function Experiments() {
         </div>
       ) : (
         /* Grid View */
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {paginatedExperiments.map((experiment) => {
+        <div className="space-y-4">
+          {/* Grid header with select all */}
+          {paginatedExperiments.length > 0 && (
+            <div className="bg-white rounded-lg shadow px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleAll}
+                  className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-600 hover:bg-gray-50"
+                >
+                  {selectedExperiments.size === paginatedExperiments.length && paginatedExperiments.length > 0 ? (
+                    <CheckSquare className="h-5 w-5" />
+                  ) : (
+                    <Square className="h-5 w-5" />
+                  )}
+                </button>
+                <span className="text-sm text-gray-700">
+                  {selectedExperiments.size > 0 ? `${selectedExperiments.size} selected` : 'Select all'}
+                </span>
+              </div>
+              <span className="text-sm text-gray-500">
+                {paginatedExperiments.length} experiment{paginatedExperiments.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedExperiments.map((experiment) => {
             const ModalityIcon = getModalityIcon(experiment.modality);
             const modalityColor = getModalityColor(experiment.modality);
             const subjectId = routeSubject || getSubjectId(experiment);
             const projectId = routeProject || experiment.project;
             const experimentId = getExperimentId(experiment);
+            const isSelected = selectedExperiments.has(experimentId);
 
             return (
               <div
                 key={experimentId}
-                className="relative group bg-white rounded-lg shadow hover:shadow-md transition-shadow overflow-hidden"
+                className={clsx(
+                  'relative group bg-white rounded-lg shadow hover:shadow-md transition-all overflow-hidden border-2',
+                  isSelected ? 'border-blue-500 bg-blue-50' : 'border-transparent'
+                )}
               >
+                {/* Checkbox in top-left corner */}
+                <div className="absolute top-3 left-3 z-10">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleToggleExperiment(experimentId);
+                    }}
+                    className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-600 bg-white shadow-sm"
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="h-5 w-5" />
+                    ) : (
+                      <Square className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+
                 <Link
                   to={`/experiments/${projectId}/${subjectId}/${experiment.label || experimentId}`}
                   className="block hover:opacity-90 transition-opacity"
@@ -865,6 +916,7 @@ export function Experiments() {
               </div>
             );
           })}
+          </div>
         </div>
       )}
 

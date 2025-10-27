@@ -1,6 +1,7 @@
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryProvider } from './providers/QueryProvider';
 import { XnatProvider, useXnat } from './contexts/XnatContext';
+import { MorpheusPreferencesProvider } from './contexts/MorpheusPreferencesContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ContainerJobsProvider } from './contexts/ContainerJobsContext';
 import { Login } from './components/Login';
@@ -103,17 +104,19 @@ function AppContent() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <QueryProvider>
-        <XnatProvider>
-          <ContainerJobsProvider>
-            <Router>
-              <AppContent />
-            </Router>
-          </ContainerJobsProvider>
-        </XnatProvider>
-      </QueryProvider>
-    </ThemeProvider>
+    <QueryProvider>
+      <XnatProvider>
+        <MorpheusPreferencesProvider>
+          <ThemeProvider>
+            <ContainerJobsProvider>
+              <Router>
+                <AppContent />
+              </Router>
+            </ContainerJobsProvider>
+          </ThemeProvider>
+        </MorpheusPreferencesProvider>
+      </XnatProvider>
+    </QueryProvider>
   );
 }
 
