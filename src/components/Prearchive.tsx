@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
+import { useMorpheusPreferences } from '../contexts/MorpheusPreferencesContext';
 import { useState } from 'react';
-import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2, Calendar } from 'lucide-react';
+import { Archive, Trash2, RefreshCw, FolderInput, AlertCircle, CheckCircle, Clock, XCircle, Loader, Eye, FolderTree, ArrowUpDown, ArrowUp, ArrowDown, Columns, FileSearch, FileText, ChevronDown, ChevronRight, Shield, Edit3, Maximize2, Minimize2, Calendar, Grid3x3, List } from 'lucide-react';
 import type { XnatPrearchiveSession, XnatPrearchiveScan } from '../services/xnat-api';
 // @ts-ignore - dcmjs doesn't have TypeScript definitions
 import * as dcmjs from 'dcmjs';
@@ -75,7 +76,9 @@ type AnonymizationProgress = {
 
 export function Prearchive() {
   const { client } = useXnat();
+  const { getLayout, setLayout } = useMorpheusPreferences();
   const queryClient = useQueryClient();
+  const viewMode = getLayout('prearchive');
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
   const [filterProject, setFilterProject] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -925,6 +928,34 @@ export function Prearchive() {
           </p>
         </div>
         <div className="flex gap-2">
+          <div className="inline-flex rounded-md shadow-sm" role="group">
+            <button
+              type="button"
+              onClick={() => setLayout('prearchive', 'grid')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-l-lg border',
+                viewMode === 'grid'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+              title="Grid View"
+            >
+              <Grid3x3 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLayout('prearchive', 'table')}
+              className={clsx(
+                'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              )}
+              title="Table View"
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
           <div className="relative">
             <button
               onClick={() => setShowColumnFilter(!showColumnFilter)}
@@ -1114,10 +1145,11 @@ export function Prearchive() {
         )}
       </div>
 
-      {/* Sessions Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+      {/* Sessions Table/Grid */}
+      {viewMode === 'table' ? (
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left">
@@ -1312,6 +1344,118 @@ export function Prearchive() {
           </table>
         </div>
       </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Grid header with select all */}
+          {filteredSessions.length > 0 && (
+            <div className="bg-white rounded-lg shadow px-4 py-3 flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedSessions.size === filteredSessions.length && filteredSessions.length > 0}
+                  onChange={handleSelectAll}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">
+                  {selectedSessions.size > 0 ? `${selectedSessions.size} selected` : 'Select all'}
+                </span>
+              </label>
+              <span className="text-sm text-gray-500">
+                {filteredSessions.length} session{filteredSessions.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredSessions.length === 0 ? (
+            <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
+              <FolderInput className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+              <p className="font-medium text-gray-900">No prearchive sessions found</p>
+              <p className="text-sm text-gray-500 mt-1">Sessions will appear here after upload and before archiving</p>
+            </div>
+          ) : (
+            filteredSessions.map((session) => {
+              const sessionKey = `${session.project}-${session.timestamp}-${session.subject}`;
+              const isSelected = selectedSessions.has(sessionKey);
+
+              return (
+                <div
+                  key={sessionKey}
+                  className={clsx(
+                    'bg-white rounded-lg shadow p-4 space-y-3 border-2 transition-all',
+                    isSelected ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:shadow-lg'
+                  )}
+                >
+                  <div className="flex items-start justify-between">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleSelectSession(sessionKey)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mt-1"
+                    />
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
+                      {getStatusIcon(session.status)}
+                      {session.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Project</p>
+                      <p className="text-sm font-semibold text-gray-900">{session.project}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Subject</p>
+                      <p className="text-sm font-medium text-gray-900">{session.subject}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Session</p>
+                      <p className="text-sm text-gray-900">{session.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Scan Date</p>
+                      <p className="text-sm text-gray-600">
+                        {session.scan_date ? new Date(session.scan_date).toLocaleDateString() : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Uploaded</p>
+                      <p className="text-sm text-gray-600">{new Date(session.uploaded).toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-200 flex gap-2">
+                    <button
+                      onClick={() => handleViewDetails(session)}
+                      className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100 inline-flex items-center justify-center gap-1"
+                      title="View Details"
+                    >
+                      <Eye className="w-3 h-3" />
+                      View
+                    </button>
+                    <button
+                      onClick={() => setActionDialogSession(session)}
+                      className="flex-1 px-3 py-1.5 text-xs font-medium text-green-600 bg-green-50 rounded hover:bg-green-100 inline-flex items-center justify-center gap-1"
+                      title="Archive Session"
+                    >
+                      <Archive className="w-3 h-3" />
+                      Archive
+                    </button>
+                    <button
+                      onClick={() => handleDelete(session)}
+                      className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded hover:bg-red-100"
+                      title="Delete Session"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          </div>
+        </div>
+      )}
 
       {/* Archive Dialog */}
       {actionDialogSession && !archiveProgress && (

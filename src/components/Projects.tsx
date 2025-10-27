@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
+import { useMorpheusPreferences } from '../contexts/MorpheusPreferencesContext';
 import { 
   Folder, 
   Plus, 
@@ -25,9 +26,10 @@ function getProjectId(project: any): string {
 export function Projects() {
   const { client } = useXnat();
   const queryClient = useQueryClient();
+  const { getLayout, setLayout } = useMorpheusPreferences();
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const viewMode = getLayout('projects');
 
   const { data: projects, isLoading, error } = useQuery({
     queryKey: ['projects'],
@@ -87,7 +89,7 @@ export function Projects() {
           <div className="inline-flex rounded-md shadow-sm" role="group">
             <button
               type="button"
-              onClick={() => setViewMode('grid')}
+              onClick={() => setLayout('projects', 'grid')}
               className={clsx(
                 'px-4 py-2 text-sm font-medium rounded-l-lg border',
                 viewMode === 'grid'
@@ -99,7 +101,7 @@ export function Projects() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('table')}
+              onClick={() => setLayout('projects', 'table')}
               className={clsx(
                 'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
                 viewMode === 'table'

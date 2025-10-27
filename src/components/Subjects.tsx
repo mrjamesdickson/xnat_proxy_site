@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useXnat } from '../contexts/XnatContext';
+import { useMorpheusPreferences } from '../contexts/MorpheusPreferencesContext';
 import {
   Users,
   Search,
@@ -20,12 +21,13 @@ import clsx from 'clsx';
 
 export function Subjects() {
   const { client, config } = useXnat();
+  const { getLayout, setLayout } = useMorpheusPreferences();
   const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || '');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(20);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const viewMode = getLayout('subjects');
   const [showAccessRequestModal, setShowAccessRequestModal] = useState(false);
   const [requestAccessLevel, setRequestAccessLevel] = useState('member');
   const [requestComments, setRequestComments] = useState('');
@@ -142,7 +144,7 @@ export function Subjects() {
           <div className="inline-flex rounded-md shadow-sm" role="group">
             <button
               type="button"
-              onClick={() => setViewMode('grid')}
+              onClick={() => setLayout('subjects', 'grid')}
               className={clsx(
                 'px-4 py-2 text-sm font-medium rounded-l-lg border',
                 viewMode === 'grid'
@@ -154,7 +156,7 @@ export function Subjects() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('table')}
+              onClick={() => setLayout('subjects', 'table')}
               className={clsx(
                 'px-4 py-2 text-sm font-medium rounded-r-lg border-t border-r border-b',
                 viewMode === 'table'
