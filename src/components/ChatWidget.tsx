@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   MessageCircle,
@@ -7,7 +7,9 @@ import {
   Users,
   UserPlus,
   Link as LinkIcon,
+  Minimize2,
 } from 'lucide-react';
+import { useTaskbar } from '../contexts/TaskbarContext';
 
 type Message = {
   id: number;
@@ -82,13 +84,15 @@ function useContextSummary() {
 }
 
 export function ChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true); // Start open (will be minimized)
+  const [isMinimized, setIsMinimized] = useState(true); // Start minimized
   const [messageDraft, setMessageDraft] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inviteDraft, setInviteDraft] = useState('');
   const [invitations, setInvitations] = useState<Invitation[]>([]);
 
   const context = useContextSummary();
+  const { upsertItem, removeItem } = useTaskbar();
 
   const toggleWidget = () => {
     setIsOpen((prev) => !prev);
@@ -151,8 +155,53 @@ export function ChatWidget() {
     }
   };
 
+  // Calculate taskbar subtitle
+  const taskbarSubtitle = useMemo(() => {
+    return messages.length > 0 ? `${messages.length} messages` : context.summary;
+  }, [messages.length, context.summary]);
+
+  // Manage taskbar item when minimized
+  useEffect(() => {
+    if (isOpen && isMinimized) {
+      // Add to taskbar when minimized
+      const hasMessages = messages.length > 0;
+
+      upsertItem({
+        id: 'project-chat',
+        title: 'Project Chat',
+        subtitle: taskbarSubtitle,
+        icon: <MessageCircle className="h-4 w-4" />,
+        order: 3, // Third position
+        onClick: () => {
+          setIsMinimized(false);
+        },
+        onClose: () => {
+          if (hasMessages) {
+            removeItem('project-chat');
+            setIsMinimized(false);
+            setIsOpen(false);
+          } else {
+            // Just hide from taskbar when no messages
+            setIsMinimized(false);
+          }
+        },
+      });
+    } else {
+      // Remove from taskbar when not minimized or not open
+      removeItem('project-chat');
+    }
+
+    // Cleanup on unmount
+    return () => {
+      removeItem('project-chat');
+    };
+  }, [isOpen, isMinimized, taskbarSubtitle, messages.length, upsertItem, removeItem]);
+
+  // Hide widget when minimized (it's shown in taskbar)
+  if (isMinimized) return null;
+
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-[75]">
       {isOpen ? (
         <div className="w-80 sm:w-96 bg-white shadow-2xl rounded-xl border border-gray-200 overflow-hidden">
           <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
@@ -163,13 +212,24 @@ export function ChatWidget() {
                 <p className="text-xs text-blue-100">{context.summary}</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={toggleWidget}
-              className="p-1 rounded-full hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                className="p-1 rounded-full hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-white"
+                aria-label="Minimize to taskbar"
+                title="Minimize to taskbar"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleWidget}
+                className="p-1 rounded-full hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-600 focus:ring-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="px-4 py-3 border-b border-gray-200 bg-blue-50">

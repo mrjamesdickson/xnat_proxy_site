@@ -1676,7 +1676,7 @@ export function CompressedUploader() {
 
       {/* Anonymization Script Dialog */}
       {showScriptDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
             isScriptMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-4xl w-full max-h-[90vh]'
           }`}>
@@ -1841,7 +1841,7 @@ export function CompressedUploader() {
         };
 
         return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -2301,7 +2301,7 @@ export function CompressedUploader() {
 
       {/* Anonymization Manifest Dialog */}
       {showManifestDialog && anonymizationManifest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
             isManifestMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-6xl w-full max-h-[90vh]'
           }`}>

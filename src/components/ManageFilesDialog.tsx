@@ -1212,7 +1212,7 @@ const assessorResourceGroups = useMemo(() => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4 py-6">
       <div className="flex h-full w-full max-h-[90vh] max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/10">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <div>

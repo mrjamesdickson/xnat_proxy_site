@@ -84,7 +84,7 @@ export function WorkflowContainerLogsModal({ containerId, logType, onClose }: Wo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/70 p-4">
       <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
           <div>

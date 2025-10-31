@@ -1014,9 +1014,9 @@ export function Processing() {
                               type="button"
                               onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                               className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                              title="View Build Directory"
                             >
                               <FolderSearch className="h-3 w-3" />
-                              Build Dir
                             </button>
                             {containerId && (
                               <>
@@ -1226,9 +1226,9 @@ export function Processing() {
                             type="button"
                             onClick={() => setSelectedBuildDirWorkflowId(workflowKey)}
                             className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-500"
+                            title="View Build Directory"
                           >
                             <FolderSearch className="h-3 w-3" />
-                            Build Dir
                           </button>
                           {containerId && (
                             <>

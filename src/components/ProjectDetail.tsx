@@ -13,7 +13,8 @@ import {
   Eye,
   FolderCog,
   Upload,
-  ExternalLink
+  ExternalLink,
+  Download
 } from 'lucide-react';
 import { ProcessingMenu } from './ProcessingMenu';
 import { ManageFilesDialog } from './ManageFilesDialog';
@@ -102,6 +103,14 @@ export function ProjectDetail() {
           >
             <FolderCog className="h-5 w-5" />
           </button>
+          <Link
+            to={`/projects/${project}/download`}
+            className="inline-flex items-center justify-center rounded-md border border-purple-300 bg-purple-50 p-2 text-purple-700 hover:bg-purple-100"
+            aria-label="Download Data"
+            title="Download Data"
+          >
+            <Download className="h-5 w-5" />
+          </Link>
           <ProcessingMenu
             project={project!}
             xsiType="xnat:projectData"

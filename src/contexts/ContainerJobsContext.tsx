@@ -10,7 +10,7 @@ interface ContainerJobsContextType {
 const ContainerJobsContext = createContext<ContainerJobsContextType | undefined>(undefined);
 
 export function ContainerJobsProvider({ children }: { children: ReactNode }) {
-  const [isWidgetOpen, setIsWidgetOpen] = useState(false);
+  const [isWidgetOpen, setIsWidgetOpen] = useState(true); // Start open (will be minimized)
 
   const openWidget = () => setIsWidgetOpen(true);
   const closeWidget = () => setIsWidgetOpen(false);

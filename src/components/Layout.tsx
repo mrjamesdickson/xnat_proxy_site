@@ -34,6 +34,10 @@ import clsx from 'clsx';
 import { ChatWidget } from './ChatWidget';
 import { RouteDebugPanel } from './RouteDebugPanel';
 import { ContainerJobsWidget } from './ContainerJobsWidget';
+import { DownloadProgressModal } from './DownloadProgressModal';
+import { TaskbarProvider } from '../contexts/TaskbarContext';
+import { Taskbar } from './Taskbar';
+import { DownloadProvider } from '../contexts/DownloadContext';
 import { useContainerJobs } from '../contexts/ContainerJobsContext';
 import type { XnatProject, XnatProjectAccess, XnatSavedSearch } from '../services/xnat-api';
 import { useTheme } from '../contexts/ThemeContext';
@@ -234,16 +238,18 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div
-      className={clsx(
-        'min-h-screen text-gray-900 dark:text-gray-100',
-        isViewerRoute ? 'bg-gray-100 dark:bg-slate-900 flex flex-col' : 'bg-gray-50 dark:bg-slate-950 flex'
-      )}
-    >
-      {/* Left Sidebar - Hidden on viewer route or popup mode */}
-      {!isViewerRoute && !isPopupMode && (
-        <div className="hidden md:flex md:w-64 md:flex-col">
-          <div className="flex flex-col flex-grow border-r border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <TaskbarProvider>
+      <DownloadProvider>
+      <div
+        className={clsx(
+          'min-h-screen text-gray-900 dark:text-gray-100',
+          isViewerRoute ? 'bg-gray-100 dark:bg-slate-900 flex flex-col' : 'bg-gray-50 dark:bg-slate-950 flex'
+        )}
+      >
+        {/* Left Sidebar - Hidden on viewer route or popup mode */}
+        {!isViewerRoute && !isPopupMode && (
+          <div className="hidden md:flex md:w-64 md:flex-col">
+            <div className="flex flex-col flex-grow border-r border-gray-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             {/* Logo */}
             <div className="flex items-center border-b border-gray-200 px-6 py-4 dark:border-slate-800">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
@@ -833,7 +839,11 @@ export function Layout({ children }: LayoutProps) {
         {!isViewerRoute && !isPopupMode && <ChatWidget />}
         {!isPopupMode && <ContainerJobsWidget isOpen={isWidgetOpen} onClose={closeWidget} />}
         {!isPopupMode && <RouteDebugPanel />}
+        <DownloadProgressModal />
+        {!isPopupMode && <Taskbar />}
       </div>
-    </div>
+      </div>
+      </DownloadProvider>
+    </TaskbarProvider>
   );
 }
