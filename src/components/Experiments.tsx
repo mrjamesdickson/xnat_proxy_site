@@ -19,7 +19,11 @@ import {
   Grid3x3,
   List,
   CheckSquare,
-  Square
+  Square,
+  Download,
+  X,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
@@ -49,6 +53,15 @@ export function Experiments() {
   const [selectedCommandForBatch, setSelectedCommandForBatch] = useState<{command: any; wrapper: any} | null>(null);
   const [showDateFilterModal, setShowDateFilterModal] = useState(false);
   const [dateFilter, setDateFilter] = useState<{ start: string; end: string } | null>(null);
+  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const [showDownloadProgress, setShowDownloadProgress] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    current: number;
+    total: number;
+    currentLabel: string;
+    status: 'downloading' | 'complete' | 'error';
+    errors: string[];
+  }>({ current: 0, total: 0, currentLabel: '', status: 'downloading', errors: [] });
 
   const { data: projects } = useQuery({
     queryKey: ['projects'],
@@ -72,12 +85,33 @@ export function Experiments() {
     enabled: !!client,
   });
 
+  const subjectLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (subjects) {
+      subjects.forEach((subject: any) => {
+        const subjectId = subject.id || subject.ID;
+        const label = subject.label || subject.LABEL;
+        if (subjectId && label) {
+          map.set(subjectId, label);
+        }
+        if (label) {
+          map.set(label, label);
+        }
+      });
+    }
+    return map;
+  }, [subjects]);
+
   const getSubjectId = (experiment: any) => {
     // First try the direct field
     if (experiment.subject_id) {
       return experiment.subject_id;
     }
-    
+
+    if (experiment.subject_ID && subjectLabelMap.has(experiment.subject_ID)) {
+      return experiment.subject_ID;
+    }
+
     // Try to find the subject by matching experiment to subject
     // This is a common pattern where experiments belong to subjects in the same project
     if (subjects && subjects.length > 0) {
@@ -117,6 +151,35 @@ export function Experiments() {
   const getExperimentId = (experiment: any) => {
     // XNAT returns ID in uppercase
     return experiment.id || experiment.ID || experiment.label;
+  };
+
+  const getSubjectLabel = (experiment: any) => {
+    if (!experiment) return undefined;
+
+    const directLabel =
+      experiment.subject_label ||
+      experiment.subjectLabel ||
+      experiment.SUBJECT_LABEL;
+
+    if (directLabel) {
+      return directLabel;
+    }
+
+    const candidateIds = [
+      experiment.subject_ID,
+      experiment.subject_id,
+      experiment.subjectId,
+      experiment.subject,
+      getSubjectId(experiment),
+    ].filter(Boolean) as string[];
+
+    for (const candidate of candidateIds) {
+      if (candidate && subjectLabelMap.has(candidate)) {
+        return subjectLabelMap.get(candidate);
+      }
+    }
+
+    return undefined;
   };
 
   const { data: experiments, isLoading, error } = useQuery({
@@ -316,6 +379,115 @@ export function Experiments() {
       alert(message);
       setShowAccessRequestModal(false);
     }
+  };
+
+  const handleDownloadConfirm = async () => {
+    if (!client || selectedExperiments.size === 0) return;
+
+    setShowDownloadConfirm(false);
+    setShowDownloadProgress(true);
+
+    const experimentIds = Array.from(selectedExperiments);
+    const total = experimentIds.length;
+    const errors: string[] = [];
+
+    setDownloadProgress({
+      current: 0,
+      total,
+      currentLabel: '',
+      status: 'downloading',
+      errors: []
+    });
+
+    const subjectLookupCache = new Map<string, string>();
+
+    for (let i = 0; i < experimentIds.length; i++) {
+      const experimentId = experimentIds[i];
+      const experiment = experiments?.find(exp => exp.id === experimentId);
+      const experimentLabel = experiment?.label || experimentId;
+
+      setDownloadProgress(prev => ({
+        ...prev,
+        current: i + 1,
+        currentLabel: experimentLabel
+      }));
+
+      try {
+        // Download experiment scans as ZIP using XNAT archive API
+        const baseUrl = client.getHttpClient().defaults.baseURL || '';
+        const projectId = experiment?.project || selectedProject || routeProject;
+        let subjectId = getSubjectId(experiment);
+        let subjectLabel = getSubjectLabel(experiment);
+
+        if (!projectId) {
+          throw new Error(`Unable to determine project ID for experiment ${experimentId}.`);
+        }
+
+        if (subjectId && subjectLookupCache.has(subjectId)) {
+          subjectLabel = subjectLabel || subjectLookupCache.get(subjectId);
+        }
+
+        if ((!subjectLabel || subjectLabel === 'UNKNOWN_SUBJECT') && subjectId && client) {
+          try {
+            const subjectDetails = await client.getSubject(projectId, subjectId);
+            subjectLabel = subjectDetails.label || subjectDetails.id || subjectLabel;
+            if (subjectDetails.id && subjectDetails.label) {
+              subjectLookupCache.set(subjectDetails.id, subjectDetails.label);
+            }
+          } catch (lookupError) {
+            console.warn(`Unable to resolve subject label for ${subjectId}`, lookupError);
+          }
+        }
+
+        if (!subjectLabel || subjectLabel === 'UNKNOWN_SUBJECT') {
+          subjectLabel = subjectLabelMap.get(subjectId ?? '') || subjectLabel;
+        }
+
+        subjectLabel = subjectLabel || subjectId || experimentLabel;
+
+        if (subjectId && subjectLabel) {
+          subjectLookupCache.set(subjectId, subjectLabel);
+        }
+
+        if (!subjectLabel) {
+          throw new Error(`Unable to determine subject label for experiment ${experimentId}.`);
+        }
+
+        const downloadUrl = `${baseUrl}/data/archive/projects/${encodeURIComponent(projectId)}/subjects/${encodeURIComponent(subjectLabel)}/experiments/${encodeURIComponent(experimentLabel)}/scans/ALL/files?format=zip`;
+
+        const response = await fetch(downloadUrl, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${experimentLabel}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        // Small delay between downloads to avoid overwhelming the browser
+        if (i < experimentIds.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        console.error(`Failed to download ${experimentLabel}:`, error);
+        errors.push(`${experimentLabel}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    setDownloadProgress(prev => ({
+      ...prev,
+      status: errors.length > 0 ? 'error' : 'complete',
+      errors
+    }));
   };
 
   const modalities = experiments
@@ -536,28 +708,39 @@ export function Experiments() {
                 Clear selection
               </button>
             </div>
-            <div className="relative">
-              <label htmlFor="batch-container-select" className="sr-only">Select container to process</label>
-              <select
-                id="batch-container-select"
-                value=""
-                onChange={(e) => {
-                  const wrapperId = Number(e.target.value);
-                  const selected = experimentWrappers.find(w => w.wrapper.id === wrapperId);
-                  if (selected) {
-                    setSelectedCommandForBatch(selected);
-                    setShowBatchProcessModal(true);
-                  }
-                }}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 border-0"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDownloadConfirm(true)}
+                className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600"
+                title="Download selected experiments as ZIP files"
               >
-                <option value="" className="bg-white text-gray-900">Process Selected...</option>
-                {experimentWrappers.map((item) => (
-                  <option key={item.wrapper.id} value={item.wrapper.id} className="bg-white text-gray-900">
-                    {item.displayName}
-                  </option>
-                ))}
-              </select>
+                <Download className="h-4 w-4" />
+                Download
+              </button>
+              <div className="relative">
+                <label htmlFor="batch-container-select" className="sr-only">Select container to process</label>
+                <select
+                  id="batch-container-select"
+                  value=""
+                  onChange={(e) => {
+                    const wrapperId = Number(e.target.value);
+                    const selected = experimentWrappers.find(w => w.wrapper.id === wrapperId);
+                    if (selected) {
+                      setSelectedCommandForBatch(selected);
+                      setShowBatchProcessModal(true);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 border-0"
+                >
+                  <option value="" className="bg-white text-gray-900">Process Selected...</option>
+                  {experimentWrappers.map((item) => (
+                    <option key={item.wrapper.id} value={item.wrapper.id} className="bg-white text-gray-900">
+                      {item.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -1078,7 +1261,7 @@ export function Experiments() {
 
       {/* Access Request Modal */}
       {showAccessRequestModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-[80] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
           <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
             {/* Background overlay */}
             <div
@@ -1190,6 +1373,137 @@ export function Experiments() {
         }}
         currentFilter={dateFilter}
       />
+
+      {/* Download Confirmation Modal */}
+      {showDownloadConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <Download className="h-6 w-6 text-purple-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Download Experiments</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  You are about to download {selectedExperiments.size} experiment{selectedExperiments.size !== 1 ? 's' : ''} as individual ZIP files.
+                </p>
+              </div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
+              <p className="text-xs text-blue-800">
+                Each experiment will be downloaded as a separate ZIP file containing all imaging data and metadata.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDownloadConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadConfirm}
+                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700"
+              >
+                Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download Progress Modal */}
+      {showDownloadProgress && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {downloadProgress.status === 'complete'
+                    ? 'Download Complete'
+                    : downloadProgress.status === 'error'
+                    ? 'Download Completed with Errors'
+                    : 'Downloading Experiments'}
+                </h3>
+                {downloadProgress.status !== 'downloading' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDownloadProgress(false);
+                      setSelectedExperiments(new Set());
+                    }}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+
+              {downloadProgress.status === 'downloading' && (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                    <span>
+                      {downloadProgress.current} of {downloadProgress.total}
+                    </span>
+                    {downloadProgress.currentLabel && (
+                      <span className="text-gray-500">• {downloadProgress.currentLabel}</span>
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {downloadProgress.status === 'complete' && (
+                <div className="flex items-center gap-2 text-green-600 mb-3">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="text-sm font-medium">
+                    {downloadProgress.total} experiment{downloadProgress.total !== 1 ? 's' : ''} downloaded successfully
+                  </span>
+                </div>
+              )}
+
+              {downloadProgress.status === 'error' && downloadProgress.errors.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 text-orange-600 mb-2">
+                    <AlertCircle className="h-5 w-5" />
+                    <span className="text-sm font-medium">
+                      {downloadProgress.total - downloadProgress.errors.length} successful, {downloadProgress.errors.length} failed
+                    </span>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded p-3 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-semibold text-red-800 mb-1">Errors:</p>
+                    <ul className="text-xs text-red-700 space-y-1">
+                      {downloadProgress.errors.map((error, idx) => (
+                        <li key={idx} className="break-all">• {error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {downloadProgress.status !== 'downloading' && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDownloadProgress(false);
+                    setSelectedExperiments(new Set());
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

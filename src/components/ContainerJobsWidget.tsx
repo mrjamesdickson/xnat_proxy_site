@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { X, Minimize2, Maximize2, Clock, CheckCircle, XCircle, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Minimize2, Maximize2, Clock, CheckCircle, XCircle, Loader2, AlertCircle, RefreshCw, Layers } from 'lucide-react';
 import { useXnat } from '../contexts/XnatContext';
+import { useTaskbar } from '../contexts/TaskbarContext';
 import clsx from 'clsx';
 
 export interface ContainerJobsWidgetProps {
@@ -12,7 +13,9 @@ export interface ContainerJobsWidgetProps {
 
 export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProps) {
   const { client } = useXnat();
-  const [isMinimized, setIsMinimized] = useState(false);
+  const { upsertItem, removeItem } = useTaskbar();
+  const [isMinimized, setIsMinimized] = useState(true); // Start minimized
+  const [isMaximized, setIsMaximized] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -68,7 +71,64 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
     }
   }, [isOpen, client, refetch]);
 
+  // Calculate taskbar subtitle and icon
+  const runningCount = useMemo(() => {
+    return containers?.filter((w: any) => {
+      const status = (w.status || w.workflow_status || '').toLowerCase();
+      return status.includes('running') || status.includes('processing') || status.includes('active');
+    }).length || 0;
+  }, [containers]);
+
+  const taskbarSubtitle = useMemo(() => {
+    if (!containers || containers.length === 0) {
+      return 'No active jobs';
+    }
+    return runningCount > 0 ? `${runningCount} running` : `${containers.length} total`;
+  }, [runningCount, containers]);
+
+  // Manage taskbar item when minimized
+  useEffect(() => {
+    if (isOpen && isMinimized) {
+      // Add to taskbar when minimized
+      const hasContainers = containers && containers.length > 0;
+
+      upsertItem({
+        id: 'container-jobs',
+        title: 'Container Jobs',
+        subtitle: taskbarSubtitle,
+        icon: isFetching ? (
+          <RefreshCw className="h-4 w-4 animate-spin" />
+        ) : (
+          <Layers className="h-4 w-4" />
+        ),
+        order: 2, // Second position
+        onClick: hasContainers ? () => setIsMinimized(false) : undefined,
+        onClose: () => {
+          if (hasContainers) {
+            removeItem('container-jobs');
+            setIsMinimized(false);
+            onClose();
+          } else {
+            // Just hide from taskbar when no containers
+            setIsMinimized(false);
+          }
+        },
+      });
+    } else {
+      // Remove from taskbar when not minimized or not open
+      removeItem('container-jobs');
+    }
+
+    // Cleanup on unmount
+    return () => {
+      removeItem('container-jobs');
+    };
+  }, [isOpen, isMinimized, taskbarSubtitle, isFetching, containers, upsertItem, removeItem, onClose]);
+
   if (!isOpen) return null;
+
+  // Hide widget when minimized (it's shown in taskbar)
+  if (isMinimized) return null;
 
   const filteredContainers = containers?.filter((workflow: any) => {
     if (statusFilter === 'all') return true;
@@ -134,12 +194,10 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
   };
 
   return (
+    <>
     <div
-      className={clsx(
-        'fixed z-50 bg-white rounded-lg shadow-2xl border border-gray-200 transition-all',
-        isMinimized ? 'bottom-4 right-4 w-80' : 'bottom-4 right-4 w-96'
-      )}
-      style={{ maxHeight: isMinimized ? '60px' : '500px' }}
+      className="fixed bottom-4 right-4 z-[75] w-96 bg-white rounded-lg shadow-2xl border border-gray-200 transition-all dark:border-slate-700 dark:bg-slate-900"
+      style={{ maxHeight: '500px' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
@@ -159,11 +217,20 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setIsMinimized(!isMinimized)}
+            onClick={() => setIsMinimized(true)}
             className="p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700"
-            aria-label={isMinimized ? "Maximize" : "Minimize"}
+            aria-label="Minimize to taskbar"
+            title="Minimize to taskbar"
           >
-            {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+            <Minimize2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setIsMaximized(true)}
+            className="p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+            aria-label="Maximize to full screen"
+            title="Maximize to full screen"
+          >
+            <Maximize2 className="h-4 w-4" />
           </button>
           <button
             onClick={onClose}
@@ -176,8 +243,7 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
       </div>
 
       {/* Content */}
-      {!isMinimized && (
-        <div>
+      <div>
           {/* Status Filter */}
           <div className="px-4 py-2 border-b border-gray-100">
             <div className="flex items-center gap-2">
@@ -299,9 +365,182 @@ export function ContainerJobsWidget({ isOpen, onClose }: ContainerJobsWidgetProp
               </div>
             )}
           </div>
-        </div>
-      )}
+      </div>
     </div>
+
+    {/* Maximized Modal View */}
+    {isMaximized && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80] p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <RefreshCw className={clsx("h-5 w-5 text-blue-600", isFetching && "animate-spin")} />
+                <h2 className="text-xl font-semibold text-gray-900">Container Jobs</h2>
+                {containers && containers.length > 0 && (
+                  <span className="text-sm text-gray-500">({containers.length})</span>
+                )}
+              </div>
+              {lastUpdate && (
+                <div className="text-sm text-gray-500 ml-7">
+                  Updated: {lastUpdate.toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setIsMaximized(false);
+                  setIsMinimized(true);
+                }}
+                className="p-2 rounded-lg hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                aria-label="Minimize"
+                title="Minimize to taskbar"
+              >
+                <Minimize2 className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setIsMaximized(false)}
+                className="p-2 rounded-lg hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div className="px-6 py-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm font-medium rounded transition-colors',
+                  statusFilter === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStatusFilter('running')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm font-medium rounded transition-colors',
+                  statusFilter === 'running'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
+              >
+                Running
+              </button>
+              <button
+                onClick={() => setStatusFilter('complete')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm font-medium rounded transition-colors',
+                  statusFilter === 'complete'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
+              >
+                Complete
+              </button>
+              <button
+                onClick={() => setStatusFilter('failed')}
+                className={clsx(
+                  'px-3 py-1.5 text-sm font-medium rounded transition-colors',
+                  statusFilter === 'failed'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                )}
+              >
+                Failed
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {isLoadingWorkflows ? (
+              <div className="p-12 text-center text-gray-500">
+                <Loader2 className="h-12 w-12 mx-auto mb-3 text-gray-400 animate-spin" />
+                <p className="text-base">Loading...</p>
+              </div>
+            ) : !filteredContainers || filteredContainers.length === 0 ? (
+              <div className="p-12 text-center text-gray-500">
+                <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-base">No {statusFilter !== 'all' ? statusFilter : ''} jobs</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredContainers.map((workflow: any, index: number) => {
+                  const status = workflow.status || workflow.workflow_status || 'Unknown';
+                  const workflowId = workflow.workflow_id || workflow.id;
+                  const wfid = workflow.wfid || workflow.ID;
+                  const pipelineName = workflow.pipeline_name || workflow.pipelineName || workflow.label || 'Unknown Pipeline';
+                  const launchTime = workflow.launch_time || workflow.launchTime || workflow.create_date;
+                  const comments = workflow.comments;
+                  const externalId = workflow.external_id || workflow.externalId;
+                  const uniqueKey = wfid || `${workflowId}-${index}`;
+
+                  return (
+                    <div key={uniqueKey} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <Link
+                        to="/processing"
+                        className="block"
+                        onClick={() => setIsMaximized(false)}
+                      >
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="mt-1">
+                            {getStatusIcon(status)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-base text-gray-900 mb-1 truncate">
+                              {pipelineName}
+                            </div>
+                            <span className={clsx(
+                              'inline-block text-xs px-2 py-1 rounded-full',
+                              getStatusColor(status)
+                            )}>
+                              {status}
+                            </span>
+                          </div>
+                        </div>
+                        {comments && (
+                          <div className="text-sm text-gray-600 mb-2 line-clamp-2">
+                            {comments}
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1 text-sm text-gray-500">
+                          {launchTime && (
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>{formatDate(launchTime)}</span>
+                            </div>
+                          )}
+                          {externalId && (
+                            <div className="text-xs truncate">
+                              External: {externalId}
+                            </div>
+                          )}
+                          {workflowId && (
+                            <div className="text-xs text-gray-400 font-mono truncate">
+                              ID: {workflowId}
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

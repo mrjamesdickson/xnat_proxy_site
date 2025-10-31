@@ -472,7 +472,7 @@ export function DateFilterModal({ experiments, isOpen, onClose, onApplyFilter, c
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[80] overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:p-0">
         {/* Backdrop */}
         <div

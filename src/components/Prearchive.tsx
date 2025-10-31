@@ -1459,7 +1459,7 @@ export function Prearchive() {
 
       {/* Archive Dialog */}
       {actionDialogSession && !archiveProgress && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Archive Session</h3>
             <p className="text-sm text-gray-600 mb-4">
@@ -1556,7 +1556,7 @@ export function Prearchive() {
 
       {/* Archive Progress Popup */}
       {archiveProgress && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="text-center">
               {/* Status Icon */}
@@ -1657,7 +1657,7 @@ export function Prearchive() {
 
       {/* Bulk Archive Progress */}
       {bulkArchiveProgress && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="text-center">
               <Loader className="h-16 w-16 text-blue-600 animate-spin mx-auto mb-4" />
@@ -1701,7 +1701,7 @@ export function Prearchive() {
 
       {/* Bulk Operation Progress */}
       {bulkOperationProgress && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="text-center">
               {!bulkOperationProgress.completed ? (
@@ -1775,7 +1775,7 @@ export function Prearchive() {
 
       {/* Change Project Dialog */}
       {changeProjectDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Project</h3>
             <p className="text-sm text-gray-600 mb-4">
@@ -1842,7 +1842,7 @@ export function Prearchive() {
 
       {/* Anonymization Dialog */}
       {anonymizationDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-4">
               <Shield className="w-6 h-6 text-indigo-600" />
@@ -1957,7 +1957,7 @@ export function Prearchive() {
 
       {/* Anonymization Progress */}
       {anonymizationProgress && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="text-center">
               {anonymizationProgress.status === 'processing' && (
@@ -2034,7 +2034,7 @@ export function Prearchive() {
 
       {/* Session Detail Dialog */}
       {sessionDetailDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[80]">
           <div className={`bg-white rounded-lg shadow-xl p-6 overflow-y-auto transition-all ${
             isDialogMaximized ? 'w-full h-full max-w-none max-h-none' : 'max-w-2xl w-full max-h-[80vh]'
           }`}>

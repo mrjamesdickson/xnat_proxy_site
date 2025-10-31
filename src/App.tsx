@@ -40,6 +40,7 @@ import { WorkflowLog } from './components/WorkflowLog';
 import { CommandBrowser } from './components/CommandBrowser';
 import { CommandLauncher } from './components/CommandLauncher';
 import { SystemMonitoring } from './components/SystemMonitoring';
+import { ProjectDownload } from './components/ProjectDownload';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useXnat();
@@ -67,6 +68,7 @@ function AppContent() {
         <Route path="/analytics" element={<AnalyticsDashboard />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:project" element={<ProjectDetail />} />
+        <Route path="/projects/:project/download" element={<ProjectDownload />} />
         <Route path="/subjects" element={<Subjects />} />
         <Route path="/subjects/:project/:subject/experiments" element={<Experiments />} />
         <Route path="/subjects/:project/:subject" element={<SubjectDetail />} />

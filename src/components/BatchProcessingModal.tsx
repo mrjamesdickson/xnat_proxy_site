@@ -204,7 +204,7 @@ export function BatchProcessingModal({
   // If command/wrapper are preselected, show only config dialog
   if (preselectedCommand && preselectedWrapper) {
     return (
-      <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="fixed inset-0 z-[80] overflow-y-auto">
         <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
           {/* Background overlay */}
           <div
@@ -513,7 +513,7 @@ export function BatchProcessingModal({
 
   // If no command/wrapper preselected, show error
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[80] overflow-y-auto">
       <div className="flex min-h-screen items-end justify-center px-4 pb-20 pt-4 text-center sm:block sm:p-0">
         <div
           className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"

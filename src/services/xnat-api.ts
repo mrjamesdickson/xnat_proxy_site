@@ -1331,9 +1331,12 @@ export class XnatApiClient {
     } else if (projectId) {
       url = `/data/projects/${projectId}/experiments`;
     }
-    
+
     const response = await this.client.get(url, {
-      params: { format: 'json' }
+      params: {
+        format: 'json',
+        columns: 'ID,label,project,subject_ID,subject_label,xsiType,date,time'
+      }
     });
     return response.data.ResultSet.Result || [];
   }

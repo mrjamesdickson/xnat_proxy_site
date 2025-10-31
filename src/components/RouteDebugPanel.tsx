@@ -1,20 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Link2, Copy, Check, ChevronDown } from 'lucide-react';
+import { Link2, Copy, Check, ChevronDown, Minimize2 } from 'lucide-react';
+import { useTaskbar } from '../contexts/TaskbarContext';
 
 export function RouteDebugPanel() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [copied, setCopied] = useState(false);
   const location = useLocation();
   const params = useParams();
+  const { upsertItem, removeItem } = useTaskbar();
 
   // Only show in development
   if (import.meta.env.PROD) {
     return null;
   }
 
-  const searchParams = new URLSearchParams(location.search);
-  const searchObject = Object.fromEntries(searchParams.entries());
+  const searchObject = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search);
+    return Object.fromEntries(searchParams.entries());
+  }, [location.search]);
   const fullUrl = `${window.location.origin}${import.meta.env.BASE_URL}${location.pathname}${location.search}`.replace(/\/\//g, '/');
 
   const handleCopy = async () => {
@@ -23,8 +28,51 @@ export function RouteDebugPanel() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Calculate taskbar subtitle
+  const taskbarSubtitle = useMemo(() => {
+    const paramCount = Object.keys(params).length;
+    const queryCount = Object.keys(searchObject).length;
+    return [
+      paramCount > 0 ? `${paramCount} param${paramCount !== 1 ? 's' : ''}` : null,
+      queryCount > 0 ? `${queryCount} query` : null,
+    ].filter(Boolean).join(' · ') || location.pathname;
+  }, [params, searchObject, location.pathname]);
+
+  // Manage taskbar item when minimized
+  useEffect(() => {
+    if (isOpen && isMinimized) {
+      // Add to taskbar when minimized
+      upsertItem({
+        id: 'route-debug',
+        title: 'Route Info',
+        subtitle: taskbarSubtitle,
+        icon: <Link2 className="h-4 w-4" />,
+        order: 4, // Fourth position
+        onClick: () => {
+          setIsMinimized(false);
+        },
+        onClose: () => {
+          removeItem('route-debug');
+          setIsMinimized(false);
+          setIsOpen(false);
+        },
+      });
+    } else {
+      // Remove from taskbar when not minimized or not open
+      removeItem('route-debug');
+    }
+
+    // Cleanup on unmount
+    return () => {
+      removeItem('route-debug');
+    };
+  }, [isOpen, isMinimized, taskbarSubtitle, upsertItem, removeItem]);
+
+  // Hide widget when minimized (it's shown in taskbar)
+  if (isMinimized) return null;
+
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-[75]">
       {isOpen ? (
         <div className="bg-gray-900 text-gray-100 rounded-lg shadow-2xl border border-gray-700 w-[500px] max-w-[calc(100vw-2rem)]">
           {/* Header */}
@@ -33,12 +81,23 @@ export function RouteDebugPanel() {
               <Link2 className="h-4 w-4 text-blue-400" />
               <span className="font-semibold text-sm">Route Info</span>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-gray-400 hover:text-gray-200"
-            >
-              <ChevronDown className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsMinimized(true)}
+                className="text-gray-400 hover:text-gray-200 p-1"
+                aria-label="Minimize to taskbar"
+                title="Minimize to taskbar"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-gray-400 hover:text-gray-200 p-1"
+                aria-label="Close"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Content */}
